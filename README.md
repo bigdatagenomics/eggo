@@ -22,6 +22,7 @@ python setup.py install
 
 TODO: pip installable scripts for listing datasets ets.
 
+You need to [install](http://www.fabfile.org/installing.html) `fabric` too.
 
 ## Developer/maintainer interface
 
@@ -62,11 +63,11 @@ export SPARK_MASTER= # Spark master host name
 cd path/to/eggo
 
 # provision a cluster on EC2 with 5 slave (worker) nodes
-fab provision:10,r3.2xlarge
+fab provision:5,r3.2xlarge
 
 # configure proper environment on the instances
-fab configure_master
-fab configure_slaves
+fab setup_master
+fab setup_slaves
 
 # (Cloudera infra-only)
 ./tag-my-instances.py
