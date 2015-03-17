@@ -230,10 +230,21 @@ class VCF2ADAMTask(Task):
         format = self.config['sources'][0]['format']
         if format.lower() != 'vcf':
             raise ValueError("Expected 'vcf' format; got {0}".format(format))
+
+        # 1. Copy the data from S3 to the local ephemeral HDFS
+        tmp_hdfs_path = 'hdfs://{nn}:9000/tmp/{rand_id}'.format(
+            nn=os.environ['SPARK_MASTER'], rand_id=random_id())
+        distcp_cmd = ('/root/ephemeral-hdfs/bin/hadoop '
+                      'distcp {0} {1}').format(self._raw_data_s3n_url(),
+                                               tmp_hdfs_path)
+        p = Popen(distcp_cmd, shell=True)
+        p.wait()
+
+        # 2. Run the adam-submit job
         adam_cmd = ('{0}/bin/adam-submit --master spark://{1}:7077 '
                     '--executor-memory 48G vcf2adam {2} {3}').format(
                         os.environ['ADAM_HOME'], os.environ['SPARK_MASTER'],
-                        self._raw_data_s3n_url(), self._target_s3n_url())
+                        tmp_hdfs_path, self._target_s3n_url())
         p = Popen(adam_cmd, shell=True)
         p.wait()
         if p.returncode == 0:

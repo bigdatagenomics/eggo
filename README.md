@@ -59,6 +59,9 @@ export SPARK_MASTER= # Spark master host name
 
 ### Setting up a cluster
 
+Set `EGGO_EXP=TRUE` to have the setup commands use the `experiment` branch of
+eggo.
+
 ```bash
 cd path/to/eggo
 

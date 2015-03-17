@@ -56,9 +56,10 @@ def toast(config):
 # for debugging
 def _update_eggo():
     from fabric.api import cd, run
-    with cd('eggo'):
-        run('git pull')
-        run('python setup.py install')
+    from eggo.fabric_util import _install_eggo
+    with cd('~'):
+        run('rm -rf eggo')
+    _install_eggo()
 
 @task
 def update_eggo():
