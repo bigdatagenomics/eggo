@@ -70,9 +70,8 @@ def _install_fabric_luigi():
     with cd('/tmp'):
         # protobuf for luigi
         run('yum install -y protobuf protobuf-devel protobuf-python')
-        # TODO: switch back to release ver after LUIGI-765 is incorporated
         run('pip install fabric')
-        run('pip install git+https://github.com/spotify/luigi.git')
+        run('pip install luigi')
 
 
 def _install_maven(version):
