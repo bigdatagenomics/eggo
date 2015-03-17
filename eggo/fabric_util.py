@@ -92,13 +92,7 @@ def _install_maven(version):
 def _install_adam():
     # check out latest adam master
     with cd('~'):
-        # TODO: change this back after 587 merges
-        # run('git clone https://github.com/bigdatagenomics/adam.git')
         run('git clone https://github.com/bigdatagenomics/adam.git')
-        with cd('adam'):
-            run('git remote add fnothaft https://github.com/fnothaft/adam.git')
-            run('git fetch fnothaft')
-            run('git checkout -b ADAM-587 fnothaft/public-loaders')
     # build adam
     with cd('adam'):
         with shell_env(MAVEN_OPTS='-Xmx512m -XX:MaxPermSize=128m'):
@@ -108,11 +102,8 @@ def _install_adam():
 def _install_eggo():
     # check out eggo
     with cd('~'):
-        # TODO: change this back after push to upstream/master
-        # run('git clone https://github.com/bigdatagenomics/eggo.git')
-        run('git clone https://github.com/laserson/eggo.git')
+        run('git clone https://github.com/bigdatagenomics/eggo.git')
     with cd('eggo'):
-        run('git checkout -b fabric-luigi origin/fabric-luigi')
         run('python setup.py install')
 
 
