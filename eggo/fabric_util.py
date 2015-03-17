@@ -104,6 +104,8 @@ def _install_eggo():
     with cd('~'):
         run('git clone https://github.com/bigdatagenomics/eggo.git')
     with cd('eggo'):
+        if os.environ.get('EGGO_EXP', 'FALSE') == 'TRUE':
+            run('git checkout -b experiment origin/experiment')
         run('python setup.py install')
 
 
