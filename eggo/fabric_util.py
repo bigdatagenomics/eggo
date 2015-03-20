@@ -103,8 +103,13 @@ def _install_eggo():
     with cd('~'):
         run('git clone https://github.com/bigdatagenomics/eggo.git')
     with cd('eggo'):
-        if os.environ.get('EGGO_EXP', 'FALSE') == 'TRUE':
-            run('git checkout -b experiment origin/experiment')
+        if (os.environ.get('EGGO_BRANCH', 'FALSE') != 'FALSE' and
+            os.environ.get('EGGO_FORK', 'FALSE') != 'FALSE'):
+            run('git pull https://github.com/%s/eggo.git %s' % (os.environ['EGGO_FORK'],
+                                                                os.environ['EGGO_BRANCH']))
+        elif (os.environ.get('EGGO_BRANCH', 'FALSE') != 'FALSE' and
+            run('git checkout origin/%s' % os.environ['EGGO_BRANCH'])
+
         run('python setup.py install')
 
 
