@@ -33,7 +33,6 @@ from eggo.config import (
     EGGO_S3N_RAW_URL, EGGO_S3_TMP_URL)
 from eggo.util import random_id, build_s3_filename
 
-
 def create_SUCCESS_file(s3_path):
     s3client = S3Client(os.environ['AWS_ACCESS_KEY_ID'],
                         os.environ['AWS_SECRET_ACCESS_KEY'])
@@ -166,7 +165,7 @@ class DownloadDatasetParallelTask(Task):
                     compression_type = 'GZIP'
                 else:
                     raise ValueError("Unknown compression type: {0}".format(
-                        compression_type))
+                        compression_ext))
             # create download command to be run remotely
             remote_cmd = ('/root/eggo/bin/download_upload.sh {ephem} {source} '
                           '{compress} {tmp_s3_path} {final_path}').format(
@@ -205,7 +204,6 @@ class DownloadDatasetParallelTask(Task):
     def output(self):
         return S3FlagTarget(self.destination)
 
-
 class VCF2ADAMTask(Task):
 
     config = ConfigParameter()
@@ -243,6 +241,53 @@ class VCF2ADAMTask(Task):
         # 2. Run the adam-submit job
         adam_cmd = ('{0}/bin/adam-submit --master spark://{1}:7077 '
                     '--executor-memory 48G vcf2adam {2} {3}').format(
+                        os.environ['ADAM_HOME'], os.environ['SPARK_MASTER'],
+                        tmp_hdfs_path, self._target_s3n_url())
+        p = Popen(adam_cmd, shell=True)
+        p.wait()
+        if p.returncode == 0:
+            create_SUCCESS_file(self._target_s3_url())
+
+    def output(self):
+        return S3FlagTarget(self._target_s3_url())
+
+class BAM2ADAMTask(Task):
+
+    config = ConfigParameter()
+
+    def _raw_data_s3_url(self):
+        return os.path.join(EGGO_S3_RAW_URL, self.config['name']) + '/'
+
+    def _raw_data_s3n_url(self):
+        return os.path.join(EGGO_S3N_RAW_URL, self.config['name']) + '/'
+
+    def _target_s3_url(self):
+        return os.path.join(EGGO_S3_BUCKET_URL, self.config['target']) + '/'
+
+    def _target_s3n_url(self):
+        return os.path.join(EGGO_S3N_BUCKET_URL, self.config['target']) + '/'
+
+    def requires(self):
+        return DownloadDatasetParallelTask(config=self.config,
+                                           destination=self._raw_data_s3_url())
+
+    def run(self):
+        format = self.config['sources'][0]['format']
+        if format.lower() != 'bam' and format.lower() != 'sam':
+            raise ValueError("Expected 'sam' or 'bam'  format; got {0}".format(format))
+
+
+        # 1. Copy the data from S3 to the local ephemeral HDFS
+        tmp_hdfs_path = 'hdfs://{nn}:9000/tmp/{rand_id}.{format}'.format(
+            nn=os.environ['SPARK_MASTER'], rand_id=random_id(), format=format)
+        distcp_cmd = ('/root/ephemeral-hdfs/bin/hadoop '
+                      'distcp {0} {1}').format(self._raw_data_s3n_url(),
+                                               tmp_hdfs_path)
+        p = Popen(distcp_cmd, shell=True)
+        p.wait()
+
+        adam_cmd = ('{0}/bin/adam-submit --master spark://{1}:7077 '
+                    '--executor-memory 48G transform {2} {3}').format(
                         os.environ['ADAM_HOME'], os.environ['SPARK_MASTER'],
                         tmp_hdfs_path, self._target_s3n_url())
         p = Popen(adam_cmd, shell=True)
