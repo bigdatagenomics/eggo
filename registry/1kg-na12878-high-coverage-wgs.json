@@ -1,0 +1,10 @@
+{
+    "name": "1kg-na12878-high-coverage-wgs",
+    "description": "1000G High Coverage WGS of NA12878",
+    "target": "1kg/na12878-high-coverage-wgs",
+    "dag": "BAM2ADAMTask",
+    "memory": "200G",
+    "sources": [
+	{"name": "NA12878", "format": "bam", "compression": false, "url": "ftp://ftp-trace.ncbi.nih.gov/1000genomes/ftp/data/NA12878/high_coverage_alignment/NA12878.mapped.ILLUMINA.bwa.CEU.high_coverage_pcr_free.20130906.bam"}
+    ]
+}
