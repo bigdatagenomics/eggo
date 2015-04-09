@@ -1,13 +1,14 @@
 # Eggo Design/Specification
 
+Author(s):
+Uri Laserson, Tom White
+
 Eggo is several things:
 
 * a repository of commonly-used public genomics data sets that are pre-
   converted into Parquet data using the BDG (and possibly GA4GH) schemas.
-
 * a user-oriented Python API to make it easy to work with public genomics data
   sets in a Hadoop environment
-
 * an administrator-oriented API for generating/managing the Parquet cloud data
   repository
 
@@ -18,6 +19,15 @@ Eggo wants to help enable functionality like that provided in PLINK/SEQ,
 SolveBio, etc. by alleviating the need for each project to re-process the same
 data sets in possibly incompatible ways.
 
+Most users will interact with Eggo simply by reading the datasets that are
+hosted in its repository. However, we’d also like to foster dataset curation by
+the community. Admins would issue a pull request to the Eggo GitHub repository
+with relevant changes to add a new dataset, then an Eggo maintainer would
+review and commit the change before running an update to add the new dataset to
+the central Eggo repository. Advanced admins would also be able to maintain
+their own Eggo repositories of datasets, although in general we’d prefer to add
+everything to the central Eggo repository.
+
 
 ## Target data sets for ingestion
 
@@ -26,7 +36,8 @@ data sets in possibly incompatible ways.
 * VCF files
   * 1000 Genomes
   * ExAC
-* Features
+  * TCGA MAF
+* Features/Annotations
   * ENCODE
 * Other
   * dbSNP
@@ -42,7 +53,7 @@ data sets in possibly incompatible ways.
 `<dataset-name>` must be globally unique in the registry.  Different
 versions/releases of the data sets should be considered to be different data
 sets in eggo (i.e., eggo doesn’t explicitly support releases/versions of the
-biological data sets).
+biological data sets; this may change in the future).
 
 `<format>` will in principle support multiple formats/schemas.  At the moment,
 we are only supporting the BDG schema, but we would like to support GA4GH as
@@ -63,9 +74,9 @@ partitioned or flattened.  The possible values are:
 
 Some example S3 keys are:
 
-    1kg-genotypes/adam/basic
-    1kg-genotypes/adam/flat
-    1kg-genotypes/adam/flat-locuspart
+    1kg-genotypes/bdg/basic
+    1kg-genotypes/bdg/flat
+    1kg-genotypes/bdg/flat-locuspart
     1kg-genotypes/ga4gh/basic
 
 Temporary data during processing may be placed in the following location:
@@ -80,8 +91,14 @@ An S3 bucket for testing purposes/experimentation is
 ### Data partitioning
 
 Currently, the data partitioning scheme that is planned to be supported is by
-genome locus.  The specific details of how that will be done are TBD.  TODO:
-@tomwhite
+genome locus.  The specific details of how that will be done are TBD, however
+it will likely be by chromosome and position (modulo 1e6 or 1e7, TBD). For
+example, records for positions in the range `[4e6, 5e6)` would live in
+the `/chr=1/pos=4` partition.
+
+For datasets with many samples, the data may be further partitioned by sample
+(hash of ID, or by date). However, this is not expected for any of the public
+datasets at this point.
 
 
 ### Data flattening
@@ -206,6 +223,14 @@ on the remote machines.
     Run full pipeline on the specified dataset. There must exist a file called
     `registry/DATASET.json`.
 
+## Examples of supported queries
 
+Todo.
 
+1000 genomes tutorials. It would be instructive to convert a 1000 genomes
+tutorial to a BDG equivalent (such as this one [questions][questions], [answers][answers]). This
+exercise would help flush out issues in the BDG datasets and tools, as well as
+demonstrating a performance boost.
 
+[questions]: ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/working/20120229_tutorial_docs/G1K_commandline_based_tutorial_exercises_20120217.pdf
+[answers]: ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/working/20120229_tutorial_docs/G1K_commandline_based_tutorial_answers_20120217.txt
