@@ -22,7 +22,7 @@
 source /root/eggo/eggo-ec2-variables.sh
 export EGGO_TMP_DIR=$(mktemp -d --tmpdir=$1 tmp_eggo_XXXX)
 pushd $EGGO_TMP_DIR
-curl -s -L -O $2
+curl -L -O $2
 
 # decompress if necessary
 case $3 in

@@ -19,7 +19,7 @@
 
 # these classes must accept a "config" parameter which takes the json file
 
-from eggo.dag import VCF2ADAMTask
+from eggo.dag import VCF2ADAMTask, BAM2ADAMTask
 
 
 if __name__ == '__main__':

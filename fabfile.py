@@ -4,7 +4,7 @@ from fabric.api import task, env, execute, local, open_shell
 
 from eggo.fabric_util import (
     PROVISION_CMD, TEARDOWN_CMD, _setup_master, _setup_slave,
-    _combine_with_environ, _get_master_host, _get_slave_hosts, _toast)
+    _combine_with_environ, _get_master_host, _get_slave_hosts, _toast )
 
 
 # ensure fabric connects as root (using default Amazon Linux AMI)
