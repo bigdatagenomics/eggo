@@ -57,7 +57,7 @@ class DownloadFileTask(Task):
 
     def run(self):
         try:
-            EPHEMERAL_MOUNT = '/mnt'
+            EPHEMERAL_MOUNT = os.environ.get('EPHEMERAL_MOUNT', '/mnt')
             tmp_dir = mkdtemp(prefix='tmp_eggo_', dir=EPHEMERAL_MOUNT)
 
             # 1. dnload file
@@ -149,7 +149,7 @@ class DownloadDatasetParallelTask(Task):
             return
 
         # 2. build the remote command for each source
-        EPHEMERAL_MOUNT = '/mnt'
+        EPHEMERAL_MOUNT = os.environ.get('EPHEMERAL_MOUNT', '/mnt')
         remote_cmds = []
         for source in sources_to_download:
             # compute some parameters for the download
@@ -221,7 +221,7 @@ class VCF2ADAMTask(Task):
         return os.path.join(EGGO_S3N_BUCKET_URL, self.config['target']) + '/'
 
     def requires(self):
-        return DownloadDatasetParallelTask(config=self.config,
+        return DownloadDatasetTask(config=self.config,
                                            destination=self._raw_data_s3_url())
 
     def run(self):
@@ -229,20 +229,30 @@ class VCF2ADAMTask(Task):
         if format.lower() != 'vcf':
             raise ValueError("Expected 'vcf' format; got {0}".format(format))
 
-        # 1. Copy the data from S3 to the local ephemeral HDFS
-        tmp_hdfs_path = 'hdfs://{nn}:9000/tmp/{rand_id}'.format(
-            nn=os.environ['SPARK_MASTER'], rand_id=random_id())
-        distcp_cmd = ('/root/ephemeral-hdfs/bin/hadoop '
-                      'distcp {0} {1}').format(self._raw_data_s3n_url(),
-                                               tmp_hdfs_path)
+        hadoop_home = os.environ.get('HADOOP_HOME', '/root/ephemeral-hdfs')
+
+        # 1. Copy the data from S3 to HDFS or the local filesystem
+        if 'SPARK_MASTER' in os.environ:
+            tmp_hadoop_path = 'hdfs://{nn}:9000/tmp/{rand_id}'.format(
+                nn=os.environ['SPARK_MASTER'], rand_id=random_id())
+        else:
+            tmp_hadoop_path = 'file:///tmp/{rand_id}'.format(
+                rand_id=random_id())
+        distcp_cmd = '{0}/bin/hadoop distcp {1} {2}'.format(
+            hadoop_home, self._raw_data_s3n_url(), tmp_hadoop_path)
         p = Popen(distcp_cmd, shell=True)
         p.wait()
 
         # 2. Run the adam-submit job
-        adam_cmd = ('{0}/bin/adam-submit --master spark://{1}:7077 '
-                    '--executor-memory 48G vcf2adam {2} {3}').format(
-                        os.environ['ADAM_HOME'], os.environ['SPARK_MASTER'],
-                        tmp_hdfs_path, self._target_s3n_url())
+        if 'SPARK_MASTER' in os.environ:
+            adam_cmd = ('{0}/bin/adam-submit --master spark://{1}:7077 '
+                '--executor-memory 48G vcf2adam {2} {3}').format(
+                os.environ['ADAM_HOME'], os.environ['SPARK_MASTER'],
+                tmp_hadoop_path, self._target_s3n_url())
+        else:
+            adam_cmd = ('{0}/bin/adam-submit vcf2adam {1} {2}').format(
+                os.environ['ADAM_HOME'],
+                tmp_hadoop_path, self._target_s3n_url())
         p = Popen(adam_cmd, shell=True)
         p.wait()
         if p.returncode == 0:

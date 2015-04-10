@@ -2,8 +2,8 @@
     "name": "test-genotypes",
     "title": "Test 1000 Genomes Project VCF data",
     "target": "test/genotypes",
-    "dag": "eggo.waffles.OneKGGenotypes",
+    "dag": "VCF2ADAMTask",
     "sources": [
-        {"format": "vcf", "compression": true, "url": "https://github.com/laserson/eggo/raw/fabric-luigi/test/resources/chr22.small.vcf.gz"}
+        {"format": "vcf", "compression": true, "url": "https://github.com/bigdatagenomics/eggo/raw/master/test/resources/chr22.small.vcf.gz"}
     ]
 }

@@ -19,7 +19,9 @@
 # COMPRESSION_TYPE can be NONE or GZIP
 
 # download the file locally
-source /root/eggo/eggo-ec2-variables.sh
+if [ -f /root/eggo/eggo-ec2-variables.sh ]; then
+  source /root/eggo/eggo-ec2-variables.sh
+fi
 export EGGO_TMP_DIR=$(mktemp -d --tmpdir=$1 tmp_eggo_XXXX)
 pushd $EGGO_TMP_DIR
 curl -L -O $2
