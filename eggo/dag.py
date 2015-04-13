@@ -126,80 +126,84 @@ class DownloadDatasetParallelTask(Task):
     destination = Parameter()  # full S3 prefix to put data
 
     def run(self):
-        s3client = S3Client(os.environ['AWS_ACCESS_KEY_ID'],
-                            os.environ['AWS_SECRET_ACCESS_KEY'])
-        slaves = os.environ['SLAVES'].split()
+        try:
+            EPHEMERAL_MOUNT = os.environ.get('EPHEMERAL_MOUNT', '/mnt')
+            tmp_dir = mkdtemp(prefix='tmp_eggo_', dir=EPHEMERAL_MOUNT)
 
-        # 1. determine which files need to be dnloaded and which already exist
-        sources_to_download = []
-        for source in self.config['sources']:
-            dest_name = build_s3_filename(source['url'],
-                                          decompress=source['compression'])
-            dest_url = os.path.join(self.destination, dest_name)
-            if not s3client.exists(dest_url):
-                sources_to_download.append(source)
-        
-        sys.stderr.write("Sources to download:\n")
-        for s in sources_to_download:
-            sys.stderr.write("    {0}\n".format(s['url']))
-        sys.stderr.flush()
+            s3client = S3Client(os.environ['AWS_ACCESS_KEY_ID'],
+                                os.environ['AWS_SECRET_ACCESS_KEY'])
 
-        if len(sources_to_download) == 0:
-            create_SUCCESS_file(self.destination)
-            return
+            # 1. determine which files need to be dnloaded and which already exist
+            sources_to_download = []
+            for source in self.config['sources']:
+                dest_name = build_s3_filename(source['url'],
+                                              decompress=source['compression'])
+                dest_url = os.path.join(self.destination, dest_name)
+                if not s3client.exists(dest_url):
+                    sources_to_download.append(source)
 
-        # 2. build the remote command for each source
-        EPHEMERAL_MOUNT = os.environ.get('EPHEMERAL_MOUNT', '/mnt')
-        remote_cmds = []
-        for source in sources_to_download:
-            # compute some parameters for the download
-            tmp_s3_path = os.path.join(EGGO_S3_TMP_URL, random_id())
-            dest_name = build_s3_filename(source['url'],
-                                          decompress=source['compression'])
-            dest_url = os.path.join(self.destination, dest_name)
-            if not source['compression']:
-                compression_type = 'NONE'
-            else:
-                compression_ext = os.path.splitext(source['url'])[-1]
-                if compression_ext == '.gz':
-                    compression_type = 'GZIP'
-                else:
-                    raise ValueError("Unknown compression type: {0}".format(
-                        compression_ext))
-            # create download command to be run remotely
-            remote_cmd = ('/root/eggo/bin/download_upload.sh {ephem} {source} '
-                          '{compress} {tmp_s3_path} {final_path}').format(
-                              ephem=EPHEMERAL_MOUNT, source=source['url'],
-                              compress=compression_type,
-                              tmp_s3_path=tmp_s3_path, final_path=dest_url)
-            remote_cmds.append(remote_cmd)
-
-        # 3. execute remote commands on slaves
-        ssh_cmd = 'ssh -t {slave} {remote_cmd}'
-        pool = {}
-        for slave in slaves:
-            if len(remote_cmds) == 0:
-                break
-            remote_cmd = remote_cmds.pop()
-            cmd = ssh_cmd.format(slave=slave, remote_cmd=remote_cmd)
-            pool[slave] = Popen(cmd.split(), shell=False)
-
-        finished = lambda: (len(remote_cmds) == 0 and
-                            all([p.poll() is not None for p in pool.itervalues()]))
-
-        while not finished():
-            num_unfinished = [p.poll() is None for p in pool.itervalues()].count(True)
-            sys.stderr.write("Num not finished: {0}\n".format(num_unfinished))
+            sys.stderr.write("Sources to download:\n")
+            for s in sources_to_download:
+                sys.stderr.write("    {0}\n".format(s['url']))
             sys.stderr.flush()
-            sleep(5)
-            for slave in pool:
-                # if slave finished and more work to be done
-                if pool[slave].poll() is not None and len(remote_cmds) > 0:
-                    remote_cmd = remote_cmds.pop()
-                    cmd = ssh_cmd.format(slave=slave, remote_cmd=remote_cmd)
-                    pool[slave] = Popen(cmd, shell=True)
 
-        create_SUCCESS_file(self.destination)
+            if len(sources_to_download) == 0:
+                create_SUCCESS_file(self.destination)
+                return
+
+            # 2. build the remote command for each source
+            tmp_command_file = '{0}/command_file'.format(tmp_dir)
+            with open(tmp_command_file, 'w') as command_file:
+                for source in sources_to_download:
+                    # compute some parameters for the download
+                    tmp_s3_path = os.path.join(EGGO_S3_TMP_URL, random_id())
+                    dest_name = build_s3_filename(source['url'],
+                                                  decompress=source['compression'])
+                    dest_url = os.path.join(self.destination, dest_name)
+                    if not source['compression']:
+                        compression_type = 'NONE'
+                    else:
+                        compression_ext = os.path.splitext(source['url'])[-1]
+                        if compression_ext == '.gz':
+                            compression_type = 'GZIP'
+                        else:
+                            raise ValueError("Unknown compression type: {0}".format(
+                                compression_ext))
+                    command_file.write(('{ephem} {source} {compress} {tmp_s3_path} '
+                                        '{final_path}\n').format(
+                                      ephem=EPHEMERAL_MOUNT, source=source['url'],
+                                      compress=compression_type,
+                                      tmp_s3_path=tmp_s3_path, final_path=dest_url))
+
+            # 3. Copy command file to Hadoop filesystem
+            hadoop_tmp_command_file = mkdtemp(prefix='tmp_eggo_', dir='/tmp')
+            copy_cmd = '{hadoop_home}/bin/hadoop fs -put {source} {target}'.format(
+                hadoop_home=os.environ['HADOOP_HOME'], source=tmp_command_file,
+                target=hadoop_tmp_command_file)
+            p = Popen(copy_cmd, shell=True)
+            p.wait()
+
+            # 4. Run streaming job to download files in parallel
+            streaming_cmd = '{hadoop_home}/bin/hadoop jar {streaming_jar}' \
+                            '  -D mapred.reduce.tasks=0' \
+                            '  -D mapred.map.tasks.speculative.execution=false' \
+                            '  -D mapred.task.timeout=12000000' \
+                            '  -input {input}' \
+                            '  -inputformat org.apache.hadoop.mapred.lib.NLineInputFormat' \
+                            '  -output {output}' \
+                            '  -outputformat org.apache.hadoop.mapred.lib.NullOutputFormat' \
+                            '  -mapper bin/download_upload_mapper.sh' \
+                            '  -file bin/download_upload_mapper.sh'.format(
+                hadoop_home=os.environ['HADOOP_HOME'],
+                streaming_jar=os.environ['STREAMING_JAR'],
+                input=hadoop_tmp_command_file, output=self.destination.replace('s3:', 's3n:'))
+            p = Popen(streaming_cmd, shell=True)
+            p.wait()
+
+        except:
+            raise
+        finally:
+            rmtree(tmp_dir)
 
     def output(self):
         return S3FlagTarget(self.destination)
@@ -221,7 +225,7 @@ class VCF2ADAMTask(Task):
         return os.path.join(EGGO_S3N_BUCKET_URL, self.config['target']) + '/'
 
     def requires(self):
-        return DownloadDatasetTask(config=self.config,
+        return DownloadDatasetParallelTask(config=self.config,
                                            destination=self._raw_data_s3_url())
 
     def run(self):
@@ -229,30 +233,20 @@ class VCF2ADAMTask(Task):
         if format.lower() != 'vcf':
             raise ValueError("Expected 'vcf' format; got {0}".format(format))
 
-        hadoop_home = os.environ.get('HADOOP_HOME', '/root/ephemeral-hdfs')
-
-        # 1. Copy the data from S3 to HDFS or the local filesystem
-        if 'SPARK_MASTER' in os.environ:
-            tmp_hadoop_path = 'hdfs://{nn}:9000/tmp/{rand_id}'.format(
-                nn=os.environ['SPARK_MASTER'], rand_id=random_id())
-        else:
-            tmp_hadoop_path = 'file:///tmp/{rand_id}'.format(
-                rand_id=random_id())
-        distcp_cmd = '{0}/bin/hadoop distcp {1} {2}'.format(
-            hadoop_home, self._raw_data_s3n_url(), tmp_hadoop_path)
+        # 1. Copy the data from S3 to Hadoop's default filesystem
+        tmp_hadoop_path = '/tmp/{rand_id}'.format(rand_id=random_id())
+        distcp_cmd = '{hadoop_home}/bin/hadoop distcp {source} {target}'.format(
+            hadoop_home=os.environ['HADOOP_HOME'],
+            source=self._raw_data_s3n_url(), target=tmp_hadoop_path)
         p = Popen(distcp_cmd, shell=True)
         p.wait()
 
         # 2. Run the adam-submit job
-        if 'SPARK_MASTER' in os.environ:
-            adam_cmd = ('{0}/bin/adam-submit --master spark://{1}:7077 '
-                '--executor-memory 48G vcf2adam {2} {3}').format(
-                os.environ['ADAM_HOME'], os.environ['SPARK_MASTER'],
-                tmp_hadoop_path, self._target_s3n_url())
-        else:
-            adam_cmd = ('{0}/bin/adam-submit vcf2adam {1} {2}').format(
-                os.environ['ADAM_HOME'],
-                tmp_hadoop_path, self._target_s3n_url())
+        adam_cmd = ('{adam_home}/bin/adam-submit --master {spark_master_url} vcf2adam'
+                    ' {source} {target}').format(
+            adam_home=os.environ['ADAM_HOME'],
+            spark_master_url=os.environ['SPARK_MASTER_URL'],
+            source=tmp_hadoop_path, target=self._target_s3n_url())
         p = Popen(adam_cmd, shell=True)
         p.wait()
         if p.returncode == 0:
@@ -287,19 +281,20 @@ class BAM2ADAMTask(Task):
             raise ValueError("Expected 'sam' or 'bam'  format; got {0}".format(format))
 
 
-        # 1. Copy the data from S3 to the local ephemeral HDFS
-        tmp_hdfs_path = 'hdfs://{nn}:9000/tmp/{rand_id}.{format}'.format(
-            nn=os.environ['SPARK_MASTER'], rand_id=random_id(), format=format)
-        distcp_cmd = ('/root/ephemeral-hdfs/bin/hadoop '
-                      'distcp {0} {1}').format(self._raw_data_s3n_url(),
-                                               tmp_hdfs_path)
+        # 1. Copy the data from S3 to Hadoop's default filesystem
+        tmp_hadoop_path = '/tmp/{rand_id}'.format(rand_id=random_id())
+        distcp_cmd = '{hadoop_home}/bin/hadoop distcp {source} {target}'.format(
+            hadoop_home=os.environ['HADOOP_HOME'],
+            source=self._raw_data_s3n_url(), target=tmp_hadoop_path)
         p = Popen(distcp_cmd, shell=True)
         p.wait()
 
-        adam_cmd = ('{0}/bin/adam-submit --master spark://{1}:7077 '
-                    '--executor-memory 48G transform {2} {3}').format(
-                        os.environ['ADAM_HOME'], os.environ['SPARK_MASTER'],
-                        tmp_hdfs_path, self._target_s3n_url())
+        # 2. Run the adam-submit job
+        adam_cmd = ('{adam_home}/bin/adam-submit --master {spark_master_url} transform'
+                    ' {source} {target}').format(
+            adam_home=os.environ['ADAM_HOME'],
+            spark_master_url=os.environ['SPARK_MASTER_URL'],
+            source=tmp_hadoop_path, target=self._target_s3n_url())
         p = Popen(adam_cmd, shell=True)
         p.wait()
         if p.returncode == 0:

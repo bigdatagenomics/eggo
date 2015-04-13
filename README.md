@@ -128,11 +128,13 @@ Set `fs.s3n.awsAccessKeyId` and `fs.s3n.awsSecretAccessKey` in Hadoop's _core-si
 Set up the environment with:
 
 ```bash
-export SLAVES=localhost
 export AWS_DEFAULT_REGION=us-east-1
 export EPHEMERAL_MOUNT=/tmp
 export ADAM_HOME=~/workspace/adam
 export HADOOP_HOME=~/sw/hadoop-2.5.1/
+export SPARK_HOME=~/sw/spark-1.3.0-bin-hadoop2.4/
+export SPARK_MASTER_URL=local
+export STREAMING_JAR=$HADOOP_HOME/share/hadoop/tools/lib/hadoop-streaming-2.5.1.jar
 ```
 
 Generate the test dataset with
