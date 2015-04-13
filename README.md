@@ -143,9 +143,8 @@ Generate the test dataset with
 bin/toaster.py --local-scheduler VCF2ADAMTask --config test/registry/test-genotypes.json
 ```
 
-You can delete the test files with
+You can delete the test dataset with
 
 ```bash
-aws s3 rm --recursive s3://bdg-eggo/raw/test-genotypes
-aws s3 rm --recursive s3://bdg-eggo/test/genotypes
+bin/toaster.py --local-scheduler DeleteDatasetTask --config test/registry/test-genotypes.json
 ```

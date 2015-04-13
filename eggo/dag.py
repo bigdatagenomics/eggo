@@ -208,6 +208,24 @@ class DownloadDatasetParallelTask(Task):
     def output(self):
         return S3FlagTarget(self.destination)
 
+class DeleteDatasetTask(Task):
+
+    config = ConfigParameter()
+
+    def _raw_data_s3n_url(self):
+        return os.path.join(EGGO_S3N_RAW_URL, self.config['name']) + '/'
+
+    def _target_s3n_url(self):
+        return os.path.join(EGGO_S3N_BUCKET_URL, self.config['target']) + '/'
+
+    def run(self):
+        hadoop_home = os.environ.get('HADOOP_HOME', '/root/ephemeral-hdfs')
+        delete_raw_cmd = '{hadoop_home}/bin/hadoop fs -rm -r {raw} {target}'.format(
+            hadoop_home=hadoop_home, raw=self._raw_data_s3n_url(),
+            target=self._target_s3n_url())
+        p = Popen(delete_raw_cmd, shell=True)
+        p.wait()
+
 class VCF2ADAMTask(Task):
 
     config = ConfigParameter()
