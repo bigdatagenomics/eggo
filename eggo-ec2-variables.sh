@@ -14,8 +14,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+export HADOOP_HOME=/root/ephemeral-hdfs
 export SPARK_HOME=/root/spark
 export ADAM_HOME=/root/adam
 # sets addl vars, incl AWS credentials
 source /root/spark-ec2/ec2-variables.sh
 export SPARK_MASTER="$MASTERS"
+export SPARK_MASTER_URL="spark://$SPARK_MASTER:7077"
+export STREAMING_JAR=$HADOOP_HOME/contrib/streaming/hadoop-streaming-1.0.4.jar

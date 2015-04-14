@@ -15,26 +15,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# args: EPHEMERAL_MOUNT SOURCE_URL COMPRESSION_TYPE TMP_S3_PATH FINAL_S3_PATH
+# This script is run as a Hadoop streaming mapper.
+# NLineInputFormat gives a single line:
+# key is OFFSET (ignored),
+# value is EPHEMERAL_MOUNT SOURCE_URL COMPRESSION_TYPE TMP_S3_PATH FINAL_S3_PATH
 # COMPRESSION_TYPE can be NONE or GZIP
+
+read OFFSET EPHEMERAL_MOUNT SOURCE_URL COMPRESSION_TYPE TMP_S3_PATH FINAL_S3_PATH
 
 # download the file locally
 if [ -f /root/eggo/eggo-ec2-variables.sh ]; then
   source /root/eggo/eggo-ec2-variables.sh
 fi
-export EGGO_TMP_DIR=$(mktemp -d --tmpdir=$1 tmp_eggo_XXXX)
+#export EGGO_TMP_DIR=$(mktemp -d --tmpdir=$EPHEMERAL_MOUNT tmp_eggo_XXXX)
+export EGGO_TMP_DIR=$(mktemp -d tmp_eggo_XXXX)
 pushd $EGGO_TMP_DIR
-curl -L -O $2
+curl -L -O $SOURCE_URL
 
 # decompress if necessary
-case $3 in
+case $COMPRESSION_TYPE in
     NONE)
         ;;
     GZIP)
         gunzip *.gz
         ;;
     *)
-        echo "Expected NONE or GZIP; got $3."
+        echo "Expected NONE or GZIP; got $COMPRESSION_TYPE."
         popd
         rm -rf $EGGO_TMP_DIR
         exit 1
@@ -42,7 +48,7 @@ case $3 in
 esac
 
 # upload to S3
-aws s3 cp ./* $4
-aws s3 mv $4 $5
+aws s3 cp ./* $TMP_S3_PATH
+aws s3 mv $TMP_S3_PATH $FINAL_S3_PATH
 popd
 rm -rf $EGGO_TMP_DIR

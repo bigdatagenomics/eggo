@@ -116,3 +116,35 @@ def verify_env():
 
 TODO: have to CLI commands: `eggo` for users and `toaster` for maintainers.
 
+## Testing
+
+You can run Eggo from a local machine, which is helpful while developing Eggo itself.
+
+Ensure that Hadoop, AWS CLI, Spark, and ADAM are all installed.
+
+Set `fs.s3n.awsAccessKeyId` and `fs.s3n.awsSecretAccessKey` in Hadoop's _core-site.xml_
+ file.
+
+Set up the environment with:
+
+```bash
+export AWS_DEFAULT_REGION=us-east-1
+export EPHEMERAL_MOUNT=/tmp
+export ADAM_HOME=~/workspace/adam
+export HADOOP_HOME=~/sw/hadoop-2.5.1/
+export SPARK_HOME=~/sw/spark-1.3.0-bin-hadoop2.4/
+export SPARK_MASTER_URL=local
+export STREAMING_JAR=$HADOOP_HOME/share/hadoop/tools/lib/hadoop-streaming-2.5.1.jar
+```
+
+Generate the test dataset with
+
+```bash
+bin/toaster.py --local-scheduler VCF2ADAMTask --config test/registry/test-genotypes.json
+```
+
+You can delete the test dataset with
+
+```bash
+bin/toaster.py --local-scheduler DeleteDatasetTask --config test/registry/test-genotypes.json
+```
