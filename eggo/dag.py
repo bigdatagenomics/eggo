@@ -55,6 +55,10 @@ def target_s3n_url(dataset_name, format='bdg', edition='basic'):
     return os.path.join(EGGO_S3N_BUCKET_URL, dataset_name, format, edition) + '/'
 
 
+def dataset_s3n_url(dataset_name):
+    return os.path.join(EGGO_S3N_BUCKET_URL, dataset_name) + '/'
+
+
 class ConfigParameter(Parameter):
 
     def parse(self, p):
@@ -228,17 +232,11 @@ class DeleteDatasetTask(Task):
 
     config = ConfigParameter()
 
-    def _raw_data_s3n_url(self):
-        return raw_data_s3n_url(self.config['name'])
-
-    def _target_s3n_url(self):
-        return os.path.join(EGGO_S3N_BUCKET_URL, self.config['name']) + '/'
-
     def run(self):
         hadoop_home = os.environ.get('HADOOP_HOME', '/root/ephemeral-hdfs')
         delete_raw_cmd = '{hadoop_home}/bin/hadoop fs -rm -r {raw} {target}'.format(
-            hadoop_home=hadoop_home, raw=self._raw_data_s3n_url(),
-            target=self._target_s3n_url())
+            hadoop_home=hadoop_home, raw=raw_data_s3n_url(self.config['name']),
+            target=dataset_s3n_url(self.config['name']))
         p = Popen(delete_raw_cmd, shell=True)
         p.wait()
 
@@ -249,21 +247,9 @@ class ADAMBasicTask(Task):
     allowed_file_formats = Parameter()
     edition = 'basic'
 
-    def _raw_data_s3_url(self):
-        return raw_data_s3_url(self.config['name'])
-
-    def _raw_data_s3n_url(self):
-        return raw_data_s3n_url(self.config['name'])
-
-    def _target_s3_url(self):
-        return target_s3_url(self.config['name'], edition=self.edition)
-
-    def _target_s3n_url(self):
-        return target_s3n_url(self.config['name'], edition=self.edition)
-
     def requires(self):
         return DownloadDatasetParallelTask(config=self.config,
-                                           destination=self._raw_data_s3_url())
+                                           destination=raw_data_s3_url(self.config['name']))
 
     def run(self):
         format = self.config['sources'][0]['format'].lower()
@@ -276,7 +262,7 @@ class ADAMBasicTask(Task):
                                                            format=format)
         distcp_cmd = '{hadoop_home}/bin/hadoop distcp {source} {target}'.format(
             hadoop_home=os.environ['HADOOP_HOME'],
-            source=self._raw_data_s3n_url(), target=tmp_hadoop_path)
+            source=raw_data_s3n_url(self.config['name']), target=tmp_hadoop_path)
         p = Popen(distcp_cmd, shell=True)
         p.wait()
 
@@ -286,32 +272,21 @@ class ADAMBasicTask(Task):
             adam_home=os.environ['ADAM_HOME'],
             spark_master_url=os.environ['SPARK_MASTER_URL'],
             adam_command=self.adam_command,
-            source=tmp_hadoop_path, target=self._target_s3n_url())
+            source=tmp_hadoop_path, target=target_s3n_url(self.config['name'], edition=self.edition))
         p = Popen(adam_cmd, shell=True)
         p.wait()
-        if p.returncode == 0:
-            create_SUCCESS_file(self._target_s3_url())
 
     def output(self):
-        return S3FlagTarget(self._target_s3_url())
+        return S3FlagTarget(target_s3_url(self.config['name'], edition=self.edition))
 
 
-class ADAMFlatTask(Task):
+class ADAMFlattenTask(Task):
 
     config = ConfigParameter()
     adam_command = Parameter()
     allowed_file_formats = Parameter()
     source_edition = 'basic'
     edition = 'flat'
-
-    def _source_s3n_url(self):
-        return target_s3n_url(self.config['name'], edition=self.source_edition)
-
-    def _target_s3_url(self):
-        return target_s3_url(self.config['name'], edition=self.edition)
-
-    def _target_s3n_url(self):
-        return target_s3n_url(self.config['name'], edition=self.edition)
 
     def requires(self):
         return ADAMBasicTask(config=self.config, adam_command=self.adam_command,
@@ -322,14 +297,13 @@ class ADAMFlatTask(Task):
                     ' {source} {target}').format(
             adam_home=os.environ['ADAM_HOME'],
             spark_master_url=os.environ['SPARK_MASTER_URL'],
-            source=self._source_s3n_url(), target=self._target_s3n_url())
+            source=target_s3n_url(self.config['name'], edition=self.source_edition),
+            target=target_s3n_url(self.config['name'], edition=self.edition))
         p = Popen(adam_cmd, shell=True)
         p.wait()
-        if p.returncode == 0:
-            create_SUCCESS_file(self._target_s3_url())
 
     def output(self):
-        return S3FlagTarget(self._target_s3_url())
+        return S3FlagTarget(target_s3_url(self.config['name'], edition=self.edition))
 
 
 class VCF2ADAMTask(Task):
@@ -339,7 +313,7 @@ class VCF2ADAMTask(Task):
     def requires(self):
         basic = ADAMBasicTask(config=self.config, adam_command='vcf2adam',
                                   allowed_file_formats=['vcf'])
-        flat = ADAMFlatTask(config=self.config, adam_command='vcf2adam',
+        flat = ADAMFlattenTask(config=self.config, adam_command='vcf2adam',
                             allowed_file_formats=['vcf'])
         dependencies = [basic]
         for edition in self.config['editions']:
@@ -357,7 +331,7 @@ class BAM2ADAMTask(Task):
     def requires(self):
         basic = ADAMBasicTask(config=self.config, adam_command='transform',
                               allowed_file_formats=['sam', 'bam'])
-        flat = ADAMFlatTask(config=self.config, adam_command='transform',
+        flat = ADAMFlattenTask(config=self.config, adam_command='transform',
                              allowed_file_formats=['sam', 'bam'])
         dependencies = [basic]
         for edition in self.config['editions']:
