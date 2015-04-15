@@ -137,14 +137,21 @@ export SPARK_MASTER_URL=local
 export STREAMING_JAR=$HADOOP_HOME/share/hadoop/tools/lib/hadoop-streaming-2.5.1.jar
 ```
 
-Generate the test dataset with
+Generate a test dataset with
 
 ```bash
 bin/toaster.py --local-scheduler VCF2ADAMTask --config test/registry/test-genotypes.json
 ```
 
-You can delete the test dataset with
+or
+
+```bash
+bin/toaster.py --local-scheduler BAM2ADAMTask --config test/registry/test-alignments.json
+```
+
+You can delete the test datasets with
 
 ```bash
 bin/toaster.py --local-scheduler DeleteDatasetTask --config test/registry/test-genotypes.json
+bin/toaster.py --local-scheduler DeleteDatasetTask --config test/registry/test-alignments.json
 ```
