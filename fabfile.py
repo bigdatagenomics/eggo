@@ -25,14 +25,20 @@ def provision(slaves, type_='m3.large', region='us-east-1'):
 @task
 def setup_master():
     hosts = _get_master_host()
-    execute(_setup_master, hosts=hosts)
+    eggo_fork = os.environ.get('EGGO_FORK', 'bigdatagenomics')
+    eggo_branch = os.environ.get('EGGO_BRANCH', 'master')
+    execute(_setup_master, hosts=hosts, eggo_fork=eggo_fork,
+            eggo_branch=eggo_branch)
 
 
 @task
 def setup_slaves():
     hosts = _get_slave_hosts()
+    eggo_fork = os.environ.get('EGGO_FORK', 'bigdatagenomics')
+    eggo_branch = os.environ.get('EGGO_BRANCH', 'master')
     env.parallel = True
-    execute(_setup_slave, hosts=hosts)
+    execute(_setup_slave, hosts=hosts, eggo_fork=eggo_fork,
+            eggo_branch=eggo_branch)
 
 
 @task
@@ -57,9 +63,11 @@ def toast(config):
 def _update_eggo():
     from fabric.api import cd, run
     from eggo.fabric_util import _install_eggo
+    eggo_fork = os.environ.get('EGGO_FORK', 'bigdatagenomics')
+    eggo_branch = os.environ.get('EGGO_BRANCH', 'master')
     with cd('~'):
         run('rm -rf eggo')
-    _install_eggo()
+    _install_eggo(fork=eggo_fork, branch=eggo_branch)
 
 @task
 def update_eggo():

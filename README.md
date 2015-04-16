@@ -122,6 +122,8 @@ You can run Eggo from a local machine, which is helpful while developing Eggo it
 
 Ensure that Hadoop, AWS CLI, Spark, and ADAM are all installed.
 
+Make sure to set the correct path to the `hadoop` command in `client.cfg`.
+
 Set `fs.s3n.awsAccessKeyId` and `fs.s3n.awsSecretAccessKey` in Hadoop's _core-site.xml_
  file.
 
@@ -135,23 +137,24 @@ export HADOOP_HOME=~/sw/hadoop-2.5.1/
 export SPARK_HOME=~/sw/spark-1.3.0-bin-hadoop2.4/
 export SPARK_MASTER_URL=local
 export STREAMING_JAR=$HADOOP_HOME/share/hadoop/tools/lib/hadoop-streaming-2.5.1.jar
+export PATH=$PATH:$HADOOP_HOME/bin
 ```
 
 Generate a test dataset with
 
 ```bash
-bin/toaster.py --local-scheduler VCF2ADAMTask --config test/registry/test-genotypes.json
+bin/toaster.py --local-scheduler VCF2ADAMTask --ToastConfig-config test/registry/test-genotypes.json
 ```
 
 or
 
 ```bash
-bin/toaster.py --local-scheduler BAM2ADAMTask --config test/registry/test-alignments.json
+bin/toaster.py --local-scheduler BAM2ADAMTask --ToastConfig-config test/registry/test-alignments.json
 ```
 
 You can delete the test datasets with
 
 ```bash
-bin/toaster.py --local-scheduler DeleteDatasetTask --config test/registry/test-genotypes.json
-bin/toaster.py --local-scheduler DeleteDatasetTask --config test/registry/test-alignments.json
+bin/toaster.py --local-scheduler DeleteDatasetTask --ToastConfig-config test/registry/test-genotypes.json
+bin/toaster.py --local-scheduler DeleteDatasetTask --ToastConfig-config test/registry/test-alignments.json
 ```
