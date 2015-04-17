@@ -70,13 +70,13 @@ partitioned or flattened.  The possible values are:
 
 * `locuspart`: the data is locus-partitioned (in the style of Hive partitions)
 
-* `flat-locuspart`: both flattened and locus-partitioned
+* `flat_locuspart`: both flattened and locus-partitioned
 
 Some example S3 keys are:
 
     1kg-genotypes/bdg/basic
     1kg-genotypes/bdg/flat
-    1kg-genotypes/bdg/flat-locuspart
+    1kg-genotypes/bdg/flat_locuspart
     1kg-genotypes/ga4gh/basic
 
 Temporary data during processing may be placed in the following location:
