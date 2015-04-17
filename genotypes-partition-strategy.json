@@ -1,4 +1,4 @@
 [
   { "type": "identity", "source": "variant.contig.contigName", "name": "chr" },
-  { "type": "range", "source": "variant.start", "name": "pos", "range": 10000 }
+  { "type": "range", "source": "variant.start", "name": "pos", "range": 1000000 }
 ]

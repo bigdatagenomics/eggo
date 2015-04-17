@@ -337,6 +337,37 @@ class ADAMPartitionTask(Task):
         return S3FlagTarget(target_s3_url(self.config['name'], edition=self.edition))
 
 
+class ADAMFlattenPartitionTask(Task):
+
+    config = ConfigParameter()
+    adam_command = Parameter()
+    allowed_file_formats = Parameter()
+    source_edition = 'flat'
+    edition = 'flat_locuspart'
+
+    def requires(self):
+        return ADAMBasicTask(config=self.config, adam_command=self.adam_command,
+                             allowed_file_formats=self.allowed_file_formats)
+
+    def run(self):
+        adam_cmd = ('{adam_home}/bin/adam-submit --master {spark_master_url} partition'
+                    ' -partition_strategy_file {partition_strategy_file}'
+                    ' {source} {target}').format(
+            adam_home=os.environ['ADAM_HOME'],
+            spark_master_url=os.environ['SPARK_MASTER_URL'],
+            partition_strategy_file='genotypes-flat-partition-strategy.json',
+            source=target_s3n_url(self.config['name'], edition=self.source_edition),
+            target=target_s3n_url(self.config['name'], edition=self.edition))
+        p = Popen(adam_cmd, shell=True)
+        p.wait()
+
+        if p.returncode == 0:
+            create_SUCCESS_file(target_s3_url(self.config['name'], edition=self.edition))
+
+    def output(self):
+        return S3FlagTarget(target_s3_url(self.config['name'], edition=self.edition))
+
+
 class VCF2ADAMTask(Task):
 
     config = ConfigParameter()
@@ -348,6 +379,8 @@ class VCF2ADAMTask(Task):
                             allowed_file_formats=['vcf'])
         locuspart = ADAMPartitionTask(config=self.config, adam_command='vcf2adam',
                                allowed_file_formats=['vcf'])
+        flat_locuspart = ADAMFlattenPartitionTask(config=self.config, adam_command='vcf2adam',
+                                      allowed_file_formats=['vcf'])
         dependencies = [basic]
         for edition in self.config['editions']:
             if edition == 'basic':
@@ -356,6 +389,8 @@ class VCF2ADAMTask(Task):
                 dependencies.append(flat)
             elif edition == 'locuspart':
                 dependencies.append(locuspart)
+            elif edition == 'flat_locuspart':
+                dependencies.append(flat_locuspart)
         return dependencies
 
 
@@ -370,6 +405,8 @@ class BAM2ADAMTask(Task):
                              allowed_file_formats=['sam', 'bam'])
         locuspart = ADAMPartitionTask(config=self.config, adam_command='transform',
                                allowed_file_formats=['sam', 'bam'])
+        flat_locuspart = ADAMFlattenPartitionTask(config=self.config, adam_command='transform',
+                                      allowed_file_formats=['sam', 'bam'])
         dependencies = [basic]
         for edition in self.config['editions']:
             if edition == 'basic':
@@ -378,5 +415,7 @@ class BAM2ADAMTask(Task):
                 dependencies.append(flat)
             elif edition == 'locuspart':
                 dependencies.append(locuspart)
+            elif edition == 'flat_locuspart':
+                dependencies.append(flat_locuspart)
         return dependencies
 
