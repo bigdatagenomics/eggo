@@ -98,34 +98,33 @@ def _install_adam():
             run('mvn clean package -DskipTests')
 
 
-def _install_eggo():
+def _install_eggo(fork='bigdatagenomics', branch='master'):
     # check out eggo
     with cd('~'):
         run('git clone https://github.com/bigdatagenomics/eggo.git')
     with cd('eggo'):
-        if (os.environ.get('EGGO_BRANCH', 'FALSE') != 'FALSE' and
-            os.environ.get('EGGO_FORK', 'FALSE') != 'FALSE'):
-            run('git pull --no-commit https://github.com/%s/eggo.git %s' % (os.environ['EGGO_FORK'],
-                                                                            os.environ['EGGO_BRANCH']))
-        elif (os.environ.get('EGGO_BRANCH', 'FALSE') != 'FALSE'):
-            run('git checkout origin/%s' % os.environ['EGGO_BRANCH'])
-
+        if fork != 'bigdatagenomics':
+            run('git pull --no-commit https://github.com/{fork}/eggo.git'
+                ' {branch}'.format(fork=fork, branch=branch))
+        elif branch != 'master':
+            run('git checkout origin/{branch}'.format(branch=branch))
         run('python setup.py install')
 
 
-def _setup_master(maven_version='3.2.5'):
+def _setup_master(maven_version='3.2.5', eggo_fork='bigdatagenomics',
+                  eggo_branch='master'):
     _install_pip()
     _install_fabric_luigi()
     _install_maven(maven_version)
     _install_adam()
-    _install_eggo()
+    _install_eggo(fork=eggo_fork, branch=eggo_branch)
     run('/root/ephemeral-hdfs/bin/stop-all.sh')
     run('/root/ephemeral-hdfs/bin/start-all.sh')
 
 
-def _setup_slave():
+def _setup_slave(eggo_fork='bigdatagenomics', eggo_branch='master'):
     _install_pip()
-    _install_eggo()
+    _install_eggo(fork=eggo_fork, branch=eggo_branch)
 
 
 def _toast(config):
