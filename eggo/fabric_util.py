@@ -70,6 +70,7 @@ def _install_fabric_luigi():
     with cd('/tmp'):
         # protobuf for luigi
         run('yum install -y protobuf protobuf-devel protobuf-python')
+        run('pip install mechanize')
         run('pip install fabric')
         run('pip install luigi')
 
