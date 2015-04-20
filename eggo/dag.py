@@ -30,6 +30,8 @@ from luigi.hdfs import HdfsClient, HdfsTarget
 from luigi.hadoop import JobTask, HadoopJobRunner
 from luigi.parameter import Parameter
 
+CGHUB_PUBLIC_KEY = 'https://cghub.ucsc.edu/software/downloads/cghub_public.key'
+
 from eggo.config import (
     validate_config, EGGO_S3_BUCKET_URL, EGGO_S3N_BUCKET_URL, EGGO_S3_RAW_URL,
     EGGO_S3N_RAW_URL, EGGO_S3_TMP_URL)
@@ -69,6 +71,40 @@ class ToastConfig(Config):
     config = JsonFileParameter()
 
 
+def _cghub_download(url, tmp_dir, cghub_key=None, n_threads=8):
+    """Download from CGHub to TMP_DIR.
+
+    Requires GeneTorrent. Download client `gtdownload` must be
+    on PATH. Use public key if none provided and CGHUB_KEY
+    environment variable not set. Returns analysis subdirectory.
+    """
+    # 1. Check env for CGHub key and substitute public if necessary
+    if cghub_key is None:
+        cghub_key = os.environ.get('CGHUB_KEY') or CGHUB_PUBLIC_KEY
+
+    # 2. Parse url for analysis ID and filename
+    dummy, analysis_id, filename = url.split('/')
+
+    # 3. Download with gtdownload
+    cmd = 'gtdownload -c {keypath} -p {prefix} --max-children {threads} -v {analysis_id}'
+    p = Popen(cmd.format(keypath=cghub_key, prefix=tmp_dir, threads=n_threads,
+                         analysis_id=analysis_id), shell=True)
+    p.wait()
+
+    return os.path.join(tmp_dir, analysis_id)
+
+
+def _http_download(url, tmp_dir):
+    """Download URL via HTTP
+
+    Requires curl
+    """
+    dnload_cmd = 'pushd {tmp_dir} && curl -L -O {source} && popd'
+    p = Popen(dnload_cmd.format(tmp_dir=tmp_dir, source=url),
+              shell=True)
+    p.wait()
+
+
 def _dnload_to_local_upload_to_s3(source, destination, compression):
     # source: (string) URL suitable for curl
     # destination: (string) full S3 path of destination file name
@@ -78,10 +114,12 @@ def _dnload_to_local_upload_to_s3(source, destination, compression):
         tmp_dir = mkdtemp(prefix='tmp_eggo_', dir=EPHEMERAL_MOUNT)
 
         # 1. dnload file
-        dnload_cmd = 'pushd {tmp_dir} && curl -L -O {source} && popd'
-        p = Popen(dnload_cmd.format(tmp_dir=tmp_dir, source=source),
-                  shell=True)
-        p.wait()
+        if source.startswith('http'):
+            _http_download(source, tmp_dir)
+        elif source.startswith('cghub'):
+            tmp_dir = _cghub_download(source, tmp_dir)
+        else:
+            raise ValueError('source must be http(s) or cghub url')
 
         # 2. decompress if necessary
         if compression:
