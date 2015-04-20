@@ -1,0 +1,31 @@
+{
+    "name": "ccle-wgs",
+    "description": "Cancer Cell Line Encyclopedia whole genome sequencing",
+    "target": "ccle/wgs",
+    "dag": "BAM2ADAMTask",
+    "sources": [
+        {"name": "CCLE-HCC1143-DNA-08", "format": "bam", "compression": false, "url": "cghub://c727c60e-8ddd-1ddc-e040-ad451e414a77/G15511.HCC1143.2.bam"},
+        {"name": "CCLE-HCC1143BL-DNA-08", "format": "bam", "compression": false, "url": "cghub://c727c60e-95b8-1455-e040-ad451e414a79/G15511.HCC1143_BL.2.bam"},
+        {"name": "TEST-DK-A1AE-01A-11D-A13U-02", "format": "bam", "compression": false, "url": "cghub://c727c612-1be1-8c27-e040-ad451e414a7f/G15512.HCC1954_BL.5.bam"},
+        {"name": "CCLE-K-562-DNA-08", "format": "bam", "compression": false, "url": "cghub://c72531e9-0e79-91c5-e040-ad451e411a96/G15509.K-562.2.bam"},
+        {"name": "CCLE-HCC1954-DNA-08", "format": "bam", "compression": false, "url": "cghub://c727c60e-00b0-a33d-e040-ad451e414a75/G15512.HCC1954.5.bam"},
+        {"name": "CCLE-HCC1143-v2-DNA-08", "format": "bam", "compression": false, "url": "cghub://dc9dd275-7e93-4ce0-838e-47ca7b5751a6/G31860.HCC1143.1.bam"},
+        {"name": "CCLE-HCC1954-v1-DNA-08", "format": "bam", "compression": false, "url": "cghub://84a23558-26b3-42f4-a9f3-d83d118f2327/G31860.HCC1954.6.bam"},
+        {"name": "CCLE-HCC1143BL-DNA-08", "format": "bam", "compression": false, "url": "cghub://c1ea1ce7-3144-447b-bb9d-6e660cff48ce/G31860.HCC1143BL.1.bam"},
+        {"name": "CCLE-HCC1954BL-DNA-08", "format": "bam", "compression": false, "url": "cghub://74fd150b-c807-4c86-9e80-43650698e728/G31860.HCC1954BL.1.bam"},
+        {"name": "CCLE-HCC1954-DNA-09", "format": "bam", "compression": false, "url": "cghub://04e5603b-3990-4ba3-80cd-5785986332cb/19a6a7e8a4f65d8da403ee991c0fd433.bam"},
+        {"name": "CCLE-HCC1143-DNA-09", "format": "bam", "compression": false, "url": "cghub://3fb70f6d-11b0-44f0-b89e-cb538782d5be/48f412002a88837bf75ae9a01adfc09a.bam"},
+        {"name": "CCLE-HCC1143BL-DNA-09", "format": "bam", "compression": false, "url": "cghub://7cf7dec4-6f85-496d-a396-318d33b4237b/4fa1bd6b37497f6b8bda7c221bcc4e1a.bam"},
+        {"name": "CCLE-HCC1954BL-DNA-09", "format": "bam", "compression": false, "url": "cghub://ca8ac363-f9ca-4d7a-ab73-20299581361b/acf32da4fec9eefd1018e4c5170653b7.bam"},
+        {"name": "CCLE-HCC1143-DNA-10", "format": "bam", "compression": false, "url": "cghub://1aa893cb-72c2-45ac-bcc9-25b21562ab21/CCLE-HCC1143-DNA-10_mate-pair_Illumina.bam"},
+        {"name": "CCLE-HCC1954-DNA-10", "format": "bam", "compression": false, "url": "cghub://0678564a-6526-403d-887e-bc1d9a76ef29/CCLE-HCC1954-DNA-10_mate-pair_Illumina.bam"},
+        {"name": "CCLE-HCC1143-DNA-10", "format": "bam", "compression": false, "url": "cghub://aafe59bb-46e1-4c01-bbff-c89859b1c2fe/CCLE-HCC1143-DNA-10_Illumina.bam"},
+        {"name": "CCLE-HCC1143BL-DNA-10", "format": "bam", "compression": false, "url": "cghub://c03af4dc-bb34-4a24-af8c-69df43866e66/CCLE-HCC1143BL-DNA-10_Illumina.bam"},
+        {"name": "CCLE-HCC1954BL-DNA-10", "format": "bam", "compression": false, "url": "cghub://c4cffb4e-7475-4fea-8ec1-08a89d1c957e/CCLE-HCC1954BL-DNA-10_Illumina.bam"},
+        {"name": "CCLE-HCC1954-DNA-10", "format": "bam", "compression": false, "url": "cghub://23939629-c789-46ed-ad52-415622000056/CCLE-HCC1954-DNA-10_Illumina.bam"},
+        {"name": "CCLE-HCC1143BL-DNA-08", "format": "bam", "compression": false, "url": "cghub://f0e84c18-bce1-4489-a3ea-ff033deb9ce3/D4491.Solexa-178366.3.bam"},
+        {"name": "CCLE-HCC1143-v2-DNA-08", "format": "bam", "compression": false, "url": "cghub://d9ac82a7-a9d3-4545-99f2-b8e7ead79c9c/D4491.Solexa-178365.2.bam"},
+        {"name": "CCLE-HCC1954-v1-DNA-08", "format": "bam", "compression": false, "url": "cghub://55c6e4a3-057a-4a55-a2af-b7f113422d3a/D4491.Solexa-178364.2.bam"},
+        {"name": "CCLE-HCC1954BL-DNA-08", "format": "bam", "compression": false, "url": "cghub://dd630fed-573f-4726-958b-92639997b20d/D4491.Solexa-178367.2.bam"}
+    ]
+}
