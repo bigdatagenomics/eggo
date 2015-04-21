@@ -1,7 +1,6 @@
 {
     "name": "test-genotypes",
     "title": "Test 1000 Genomes Project VCF data",
-    "target": "test/genotypes",
     "dag": "VCF2ADAMTask",
     "editions": ["basic", "flat"],
     "sources": [

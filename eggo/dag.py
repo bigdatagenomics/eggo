@@ -314,7 +314,9 @@ class VCF2ADAMTask(Task):
         flat = ADAMFlattenTask(adam_command='vcf2adam',
                                allowed_file_formats=['vcf'])
         dependencies = [basic]
-        for edition in ToastConfig().config['editions']:
+        conf = ToastConfig().config
+        editions = conf['editions'] if 'editions' in conf else []
+        for edition in editions:
             if edition == 'basic':
                 pass # included by default
             elif edition == 'flat':
@@ -336,7 +338,9 @@ class BAM2ADAMTask(Task):
         flat = ADAMFlattenTask(adam_command='transform',
                                allowed_file_formats=['sam', 'bam'])
         dependencies = [basic]
-        for edition in ToastConfig().config['editions']:
+        conf = ToastConfig().config
+        editions = conf['editions'] if 'editions' in conf else []
+        for edition in editions:
             if edition == 'basic':
                 pass # included by default
             elif edition == 'flat':
