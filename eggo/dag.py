@@ -194,7 +194,10 @@ class DownloadDatasetHadoopTask(JobTask):
     def job_runner(self):
         addl_conf = {'mapred.map.tasks.speculative.execution': 'false',
                      'mapred.task.timeout': 12000000}
+        streaming_args=['-cmdenv', 'AWS_ACCESS_KEY_ID=' + os.environ['AWS_ACCESS_KEY_ID'],
+          '-cmdenv', 'AWS_SECRET_ACCESS_KEY=' + os.environ['AWS_SECRET_ACCESS_KEY']]
         return HadoopJobRunner(streaming_jar=os.environ['STREAMING_JAR'],
+                               streaming_args=streaming_args,
                                jobconfs=addl_conf,
                                input_format='org.apache.hadoop.mapred.lib.NLineInputFormat',
                                output_format='org.apache.hadoop.mapred.lib.NullOutputFormat',
