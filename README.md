@@ -137,6 +137,7 @@ export HADOOP_HOME=~/sw/hadoop-2.5.1/
 export SPARK_HOME=~/sw/spark-1.3.0-bin-hadoop2.4/
 export SPARK_MASTER_URL=local
 export STREAMING_JAR=$HADOOP_HOME/share/hadoop/tools/lib/hadoop-streaming-2.5.1.jar
+export ADAM_PARTITIONING_JAR=~/workspace/adam-partitioning~/workspace/adam-partitioning/target/adam-partitioning-0.0.1-SNAPSHOT-job.jar
 export PATH=$PATH:$HADOOP_HOME/bin
 ```
 

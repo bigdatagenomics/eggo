@@ -22,4 +22,5 @@ source /root/spark-ec2/ec2-variables.sh
 export SPARK_MASTER="$MASTERS"
 export SPARK_MASTER_URL="spark://$SPARK_MASTER:7077"
 export STREAMING_JAR=$HADOOP_HOME/contrib/streaming/hadoop-streaming-1.0.4.jar
+export ADAM_PARTITIONING_JAR=/root/adam-partitioning/adam-partitioning-0.0.1-SNAPSHOT-job.jar
 export PATH=$PATH:$HADOOP_HOME/bin

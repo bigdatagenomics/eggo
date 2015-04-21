@@ -99,6 +99,12 @@ def _install_adam():
             run('mvn clean package -DskipTests')
 
 
+def _install_adam_partitioning():
+    run('mkdir -p /root/adam-partitioning')
+    with cd('/root/adam-partitioning'):
+        run('wget https://github.com/tomwhite/adam-partitioning/raw/master/lib/adam-partitioning-0.0.1-SNAPSHOT-job.jar')
+
+
 def _install_eggo(fork='bigdatagenomics', branch='master'):
     # check out eggo
     with cd('~'):

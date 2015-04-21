@@ -317,12 +317,13 @@ class ADAMPartitionTask(Task):
                              allowed_file_formats=self.allowed_file_formats)
 
     def run(self):
-        adam_cmd = ('{adam_home}/bin/adam-submit --master {spark_master_url} partition'
-                    ' -partition_strategy_file {partition_strategy_file}'
-                    ' {source} {target}').format(
-            adam_home=os.environ['ADAM_HOME'],
-            spark_master_url=os.environ['SPARK_MASTER_URL'],
-            partition_strategy_file='genotypes-partition-strategy.json',
+        adam_cmd = ('{hadoop_home}/bin/hadoop jar {adam_partitioning_jar}'
+                    ' CrunchPartitionTool -D mapreduce.job.reduces={parallelism}'
+                    ' {partition_strategy_file} {source} {target}').format(
+            hadoop_home=os.environ['HADOOP_HOME'],
+            adam_partitioning_jar=os.environ['ADAM_PARTITIONING_JAR'],
+            parallelism=1,
+            partition_strategy_file='genotypes-partition-strategy',
             source=target_s3n_url(ToastConfig().config['name'],
                                   edition=self.source_edition),
             target=target_s3n_url(ToastConfig().config['name'],
@@ -351,12 +352,13 @@ class ADAMFlattenPartitionTask(Task):
                              allowed_file_formats=self.allowed_file_formats)
 
     def run(self):
-        adam_cmd = ('{adam_home}/bin/adam-submit --master {spark_master_url} partition'
-                    ' -partition_strategy_file {partition_strategy_file}'
-                    ' {source} {target}').format(
-            adam_home=os.environ['ADAM_HOME'],
-            spark_master_url=os.environ['SPARK_MASTER_URL'],
-            partition_strategy_file='genotypes-flat-partition-strategy.json',
+        adam_cmd = ('{hadoop_home}/bin/hadoop jar {adam_partitioning_jar}'
+                    ' CrunchPartitionTool -D mapreduce.job.reduces={parallelism}'
+                    ' {partition_strategy_file} {source} {target}').format(
+            hadoop_home=os.environ['HADOOP_HOME'],
+            adam_partitioning_jar=os.environ['ADAM_PARTITIONING_JAR'],
+            parallelism=1,
+            partition_strategy_file='flat-genotypes-partition-strategy',
             source=target_s3n_url(ToastConfig().config['name'],
                                   edition=self.source_edition),
             target=target_s3n_url(ToastConfig().config['name'],
