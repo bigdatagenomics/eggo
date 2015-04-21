@@ -1,7 +1,6 @@
 {
     "name": "1kg-wgs-subset",
     "description": "Subset of 1000G Low Coverage WGS Data",
-    "target": "1kg-wgs-subset/reads",
     "dag": "BAM2ADAMTask",
     "sources": [
 	{"name": "HG00126", "format": "bam", "compression": false, "url": "ftp://ftp-trace.ncbi.nih.gov/1000genomes/ftp/data/HG00126/alignment/HG00126.mapped.ILLUMINA.bwa.GBR.low_coverage.20121211.bam"},

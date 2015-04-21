@@ -1,7 +1,6 @@
 {
     "name": "1kg-genotypes",
     "description": "1000 Genomes Project VCF data",
-    "target": "1kg/genotypes",
     "dag": "VCF2ADAMTask",
     "sources": [
         {"format": "vcf", "compression": true, "url": "ftp://ftp-trace.ncbi.nih.gov/1000genomes/ftp/release/20110521/ALL.chr1.phase1_release_v3.20101123.snps_indels_svs.genotypes.vcf.gz"},

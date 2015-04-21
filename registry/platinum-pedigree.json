@@ -2,7 +2,6 @@
     "name": "platinum-pedigree",
     "title": "Platinum Pedigree",
     "license": "Apache-2.0",
-    "target": "s3://bdg-eggo/platinum-pedigree/reads/",
     "sources": [
         {"name": "NA12877", "format": "bam", "compression": "uncompressed", "url": "ftp://ftp.sra.ebi.ac.uk/vol1/ERA172/ERA172924/bam/NA12877_S1.bam"},
         {"name": "NA12878", "format": "bam", "compression": "uncompressed", "url": "ftp://ftp.sra.ebi.ac.uk/vol1/ERA172/ERA172924/bam/NA12878_S1.bam"},
