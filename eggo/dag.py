@@ -309,6 +309,7 @@ class ADAMPartitionTask(Task):
 
     adam_command = Parameter()
     allowed_file_formats = Parameter()
+    partition_strategy_file = Parameter()
     source_edition = 'basic'
     edition = 'locuspart'
 
@@ -323,7 +324,7 @@ class ADAMPartitionTask(Task):
             hadoop_home=os.environ['HADOOP_HOME'],
             adam_partitioning_jar=os.environ['ADAM_PARTITIONING_JAR'],
             parallelism=1,
-            partition_strategy_file='genotypes-partition-strategy',
+            partition_strategy_file=self.partition_strategy_file,
             source=target_s3n_url(ToastConfig().config['name'],
                                   edition=self.source_edition),
             target=target_s3n_url(ToastConfig().config['name'],
@@ -344,6 +345,7 @@ class ADAMFlattenPartitionTask(Task):
 
     adam_command = Parameter()
     allowed_file_formats = Parameter()
+    partition_strategy_file = Parameter()
     source_edition = 'flat'
     edition = 'flat_locuspart'
 
@@ -358,7 +360,7 @@ class ADAMFlattenPartitionTask(Task):
             hadoop_home=os.environ['HADOOP_HOME'],
             adam_partitioning_jar=os.environ['ADAM_PARTITIONING_JAR'],
             parallelism=1,
-            partition_strategy_file='flat-genotypes-partition-strategy',
+            partition_strategy_file=self.partition_strategy_file,
             source=target_s3n_url(ToastConfig().config['name'],
                                   edition=self.source_edition),
             target=target_s3n_url(ToastConfig().config['name'],
@@ -383,9 +385,11 @@ class VCF2ADAMTask(Task):
         flat = ADAMFlattenTask(adam_command='vcf2adam',
                                allowed_file_formats=['vcf'])
         locuspart = ADAMPartitionTask(adam_command='vcf2adam',
-                                      allowed_file_formats=['vcf'])
+                                      allowed_file_formats=['vcf'],
+                                      partition_strategy_file='genotypes-partition-strategy')
         flat_locuspart = ADAMFlattenPartitionTask(adam_command='vcf2adam',
-                                                  allowed_file_formats=['vcf'])
+                                                  allowed_file_formats=['vcf'],
+                                                  partition_strategy_file='flat-genotypes-partition-strategy')
         dependencies = [basic]
         conf = ToastConfig().config
         editions = conf['editions'] if 'editions' in conf else []
@@ -415,9 +419,11 @@ class BAM2ADAMTask(Task):
         flat = ADAMFlattenTask(adam_command='transform',
                                allowed_file_formats=['sam', 'bam'])
         locuspart = ADAMPartitionTask(adam_command='transform',
-                                      allowed_file_formats=['sam', 'bam'])
+                                      allowed_file_formats=['sam', 'bam'],
+                                      partition_strategy_file='alignments-partition-strategy')
         flat_locuspart = ADAMFlattenPartitionTask(adam_command='transform',
-                                                  allowed_file_formats=['sam', 'bam'])
+                                                  allowed_file_formats=['sam', 'bam'],
+                                                  partition_strategy_file='flat-alignments-partition-strategy')
         dependencies = [basic]
         conf = ToastConfig().config
         editions = conf['editions'] if 'editions' in conf else []
