@@ -3,6 +3,7 @@
     "title": "Test SAM data",
     "dag": "BAM2ADAMTask",
     "editions": ["basic", "flat", "locuspart", "flat_locuspart"],
+    "numPartitionsHint": 1,
     "sources": [
         {"format": "sam", "compression": false, "url": "https://github.com/bigdatagenomics/eggo/raw/master/test/resources/small.sam"}
     ]
