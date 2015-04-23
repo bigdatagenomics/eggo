@@ -1,11 +1,12 @@
 import os
 
+import eggo.director
+
 from fabric.api import task, env, execute, local, open_shell
 
 from eggo.fabric_util import (
     PROVISION_CMD, TEARDOWN_CMD, _setup_master, _setup_slave,
     _combine_with_environ, _get_master_host, _get_slave_hosts, _toast )
-
 
 # ensure fabric connects as root (using default Amazon Linux AMI)
 env.user = 'root'
@@ -74,3 +75,36 @@ def update_eggo():
     hosts = [_get_master_host()] + _get_slave_hosts()
     env.parallel = True
     execute(_update_eggo, hosts=hosts)
+
+# Director commands (experimental)
+
+@task
+def provision_director():
+    env.user = 'ec2-user' # use ec2-user for launcher instance login
+    eggo.director.provision()
+
+@task
+def list_director():
+    eggo.director.list()
+
+@task
+def login_director():
+    env.user = 'ec2-user' # use ec2-user for gateway instance login
+    eggo.director.login()
+
+@task
+def cm_web_proxy():
+    eggo.director.cm_web_proxy()
+
+@task
+def hue_web_proxy():
+    eggo.director.hue_web_proxy()
+
+@task
+def yarn_web_proxy():
+    eggo.director.yarn_web_proxy()
+
+@task
+def teardown_director():
+    env.user = 'ec2-user' # use ec2-user for launcher instance login
+    eggo.director.teardown()
