@@ -1,7 +1,6 @@
 {
     "name": "ccle-wgs",
     "description": "Cancer Cell Line Encyclopedia whole genome sequencing",
-    "target": "ccle/wgs",
     "dag": "BAM2ADAMTask",
     "sources": [
         {"name": "CCLE-HCC1143-DNA-08", "format": "bam", "compression": false, "url": "cghub://c727c60e-8ddd-1ddc-e040-ad451e414a77/G15511.HCC1143.2.bam"},

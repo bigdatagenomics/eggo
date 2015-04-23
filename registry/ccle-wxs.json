@@ -1,7 +1,6 @@
 {
     "name": "ccle-wxs",
     "description": "Cancer Cell Line Encyclopedia whole exome sequencing",
-    "target": "ccle/wxs",
     "dag": "BAM2ADAMTask",
     "sources": [        
         {"name": "CCLE-BICR16-DNA-08", "format": "bam", "compression": false, "url": "cghub://001df8b7-c734-4279-881c-2a7421b3a167/C836.BICR_16.1.bam"},

@@ -1,7 +1,6 @@
 {
     "name": "ccle-rnaseq",
     "description": "Cancer Cell Line Encyclopedia RNA sequencing",
-    "target": "ccle/rnaseq",
     "dag": "BAM2ADAMTask",
     "sources": [   
         {"name": "CCLE-RERF-LC-Ad2-RNA-08", "format": "bam", "compression": false, "url": "cghub://00bc84f8-6053-440f-a27d-f2dbd6701eb2/G27541.RERF-LC-Ad2.2.bam"},
