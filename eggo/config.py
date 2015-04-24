@@ -33,6 +33,7 @@ EGGO_S3N_BUCKET_URL = 's3n://{0}'.format(EGGO_BUCKET)
 EGGO_S3N_TMP_URL = os.path.join(EGGO_S3N_BUCKET_URL, S3_TMP_DATA_KEY_PREFIX)
 EGGO_S3N_RAW_URL = os.path.join(EGGO_S3N_BUCKET_URL, S3_RAW_DATA_KEY_PREFIX)
 
+CGHUB_PUBLIC_KEY = 'https://cghub.ucsc.edu/software/downloads/cghub_public.key'
 
 def validate_config(d):
     """Validate a JSON config file for an eggo dataset"""

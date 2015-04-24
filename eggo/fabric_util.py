@@ -94,7 +94,7 @@ def _install_genetorrent():
     with cd('/usr/local/genetorrent'):
         run('wget https://cghub.ucsc.edu/software/downloads/GeneTorrent/3.8.7/GeneTorrent-download-3.8.7-207-CentOS6.4.x86_64.tar.gz')
         run('tar -xvf GeneTorrent-download-3.8.7-207-CentOS6.4.x86_64.tar.gz')
-    run('echo "export PATH=$PATH:/usr/local/genetorrent" >> ~/.bash_profile')
+    run('echo "export PATH=$PATH:/usr/local/genetorrent/cghub/bin" >> ~/.bash_profile')
 
 
 def _install_adam():

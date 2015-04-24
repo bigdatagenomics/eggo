@@ -30,11 +30,9 @@ from luigi.hdfs import HdfsClient, HdfsTarget
 from luigi.hadoop import JobTask, HadoopJobRunner
 from luigi.parameter import Parameter
 
-CGHUB_PUBLIC_KEY = 'https://cghub.ucsc.edu/software/downloads/cghub_public.key'
-
 from eggo.config import (
     validate_config, EGGO_S3_BUCKET_URL, EGGO_S3N_BUCKET_URL, EGGO_S3_RAW_URL,
-    EGGO_S3N_RAW_URL, EGGO_S3_TMP_URL)
+    EGGO_S3N_RAW_URL, EGGO_S3_TMP_URL, CGHUB_PUBLIC_KEY)
 from eggo.util import random_id, build_s3_filename
 
 
@@ -83,7 +81,7 @@ def _cghub_download(url, tmp_dir, cghub_key=None, n_threads=8):
         cghub_key = os.environ.get('CGHUB_KEY') or CGHUB_PUBLIC_KEY
 
     # 2. Parse url for analysis ID and filename
-    dummy, analysis_id, filename = url.split('/')
+    analysis_id, filename = url.lstrip('cghub://').split('/')
 
     # 3. Download with gtdownload
     cmd = 'gtdownload -c {keypath} -p {prefix} --max-children {threads} -v {analysis_id}'
@@ -134,13 +132,13 @@ def _dnload_to_local_upload_to_s3(source, destination, compression):
 
         # 3. upload to tmp S3 location
         tmp_s3_path = os.path.join(EGGO_S3_TMP_URL, random_id())
-        upload_cmd = 'pushd {tmp_dir} && aws s3 cp ./* {s3_path} && popd'
+        upload_cmd = 'pushd {tmp_dir} && aws s3 cp . {s3_path} --recursive && popd'
         p = Popen(upload_cmd.format(tmp_dir=tmp_dir, s3_path=tmp_s3_path),
                   shell=True)
         p.wait()
 
         # 4. rename to final target location
-        rename_cmd = 'aws s3 mv {tmp_path} {final_path}'
+        rename_cmd = 'aws s3 mv {tmp_path} {final_path} --recursive'
         p = Popen(rename_cmd.format(tmp_path=tmp_s3_path,
                                     final_path=destination),
                   shell=True)

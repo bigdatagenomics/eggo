@@ -39,6 +39,3 @@
         {"name": "G15511.HCC1143_BL.1", "format": "bam", "compression": false, "url": "cghub://f0eaa94b-f622-49b9-8eac-e4eac6762598/G15511.HCC1143_BL.1.bam"}
     ]
 }
-
-for rec in ccle:
-    print '{"name": "%s", "format": "bam", "compression": false, "url": "cghub://%s/%s"},' % (rec['legacy_sample_id'], rec['analysis_id'], rec['files'][0]['filename'])
