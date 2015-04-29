@@ -82,6 +82,27 @@ fab login
 fab teardown
 ```
 
+There is experimental support for using Cloudera Director to provision a cluster. This
+is useful for running a cluster with more services, including YARN, the Hive metastore,
+YARN, and Impala; however it takes longer (>30mins) to bring up a cluster than the
+Spark EC2 scripts.
+
+```bash
+# provision a cluster on EC2 with 5 worker nodes
+fab provision_director
+
+# run a proxy to access Cloudera Manager via http://localhost:7180
+# type 'exit' to quit process
+fab cm_web_proxy
+
+# log in to the gateway node
+fab login_director
+
+# destroy the cluster
+fab teardown_director
+```
+
+
 ### Converting data sets
 
 The `toast` command will build the Luigi DAG for downloading the necessary data
