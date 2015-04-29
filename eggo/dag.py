@@ -31,13 +31,9 @@ from luigi.hadoop import JobTask, HadoopJobRunner
 from luigi.parameter import Parameter
 
 from eggo.config import (
-    validate_config, EGGO_S3_BUCKET_URL, EGGO_S3N_BUCKET_URL, EGGO_S3_RAW_URL,
-    EGGO_S3N_RAW_URL, EGGO_S3_TMP_URL)
+    validate_config, EGGO_S3_BUCKET_URL, EGGO_S3N_BUCKET_URL,
+    EGGO_S3N_RAW_URL, EGGO_S3N_TMP_URL)
 from eggo.util import random_id, build_s3_filename
-
-
-def raw_data_s3_url(dataset_name):
-    return os.path.join(EGGO_S3_RAW_URL, dataset_name) + '/'
 
 
 def raw_data_s3n_url(dataset_name):
@@ -55,6 +51,11 @@ def target_s3n_url(dataset_name, format='bdg', edition='basic'):
 def dataset_s3n_url(dataset_name):
     return os.path.join(EGGO_S3N_BUCKET_URL, dataset_name) + '/'
 
+
+def flagTarget(path):
+    if path.startswith("s3:") or path.startswith("s3n:"):
+        return S3FlagTarget(path)
+    return HdfsTarget(path)
 
 class JsonFileParameter(Parameter):
 
@@ -95,15 +96,20 @@ def _dnload_to_local_upload_to_s3(source, destination, compression):
             p.wait()
 
         # 3. upload to tmp S3 location
-        tmp_s3_path = os.path.join(EGGO_S3_TMP_URL, random_id())
-        upload_cmd = 'pushd {tmp_dir} && aws s3 cp ./* {s3_path} && popd'
-        p = Popen(upload_cmd.format(tmp_dir=tmp_dir, s3_path=tmp_s3_path),
+        hadoop_home = os.environ.get('HADOOP_HOME', '/root/ephemeral-hdfs')
+        tmp_s3_path = os.path.join(EGGO_S3N_TMP_URL, random_id())
+        upload_cmd = 'pushd {tmp_dir} && ' \
+                     '{hadoop_home}/bin/hadoop fs -mkdir -p {s3_tmp_dir} && ' \
+                     '{hadoop_home}/bin/hadoop fs -put ./* {s3_path} && popd'
+        p = Popen(upload_cmd.format(tmp_dir=tmp_dir, hadoop_home=hadoop_home,
+                                    s3_tmp_dir=EGGO_S3N_TMP_URL,
+                                    s3_path=tmp_s3_path),
                   shell=True)
         p.wait()
 
         # 4. rename to final target location
-        rename_cmd = 'aws s3 mv {tmp_path} {final_path}'
-        p = Popen(rename_cmd.format(tmp_path=tmp_s3_path,
+        rename_cmd = '{hadoop_home}/bin/hadoop fs -mv {tmp_path} {final_path}'
+        p = Popen(rename_cmd.format(tmp_path=tmp_s3_path, hadoop_home=hadoop_home,
                                     final_path=destination),
                   shell=True)
         p.wait()
@@ -152,7 +158,7 @@ class DownloadDatasetTask(Task):
         create_SUCCESS_file(self.destination)
 
     def output(self):
-        return S3FlagTarget(self.destination)
+        return flagTarget(self.destination)
 
 
 class PrepareHadoopDownloadTask(Task):
@@ -195,7 +201,7 @@ class DownloadDatasetHadoopTask(JobTask):
         addl_conf = {'mapred.map.tasks.speculative.execution': 'false',
                      'mapred.task.timeout': 12000000}
         streaming_args=['-cmdenv', 'AWS_ACCESS_KEY_ID=' + os.environ['AWS_ACCESS_KEY_ID'],
-          '-cmdenv', 'AWS_SECRET_ACCESS_KEY=' + os.environ['AWS_SECRET_ACCESS_KEY']]
+                        '-cmdenv', 'AWS_SECRET_ACCESS_KEY=' + os.environ['AWS_SECRET_ACCESS_KEY']]
         return HadoopJobRunner(streaming_jar=os.environ['STREAMING_JAR'],
                                streaming_args=streaming_args,
                                jobconfs=addl_conf,
@@ -208,16 +214,19 @@ class DownloadDatasetHadoopTask(JobTask):
         dest_name = build_s3_filename(source['url'],
                                       decompress=source['compression'])
         dest_url = os.path.join(self.destination, dest_name)
-        s3client = S3Client(os.environ['AWS_ACCESS_KEY_ID'],
-                            os.environ['AWS_SECRET_ACCESS_KEY'])
-        if not s3client.exists(dest_url):
+        if dest_url.startswith("s3:") or dest_url.startswith("s3n:"):
+            client = S3Client(os.environ['AWS_ACCESS_KEY_ID'],
+                              os.environ['AWS_SECRET_ACCESS_KEY'])
+        else:
+            client = HdfsClient()
+        if not client.exists(dest_url):
             _dnload_to_local_upload_to_s3(
                 source['url'], dest_url, source['compression'])
 
         yield (source['url'], 1)  # dummy output
 
     def output(self):
-        return S3FlagTarget(self.destination.replace('s3:', 's3n:'))
+        return flagTarget(self.destination)
 
 
 class DeleteDatasetTask(Task):
@@ -238,7 +247,7 @@ class ADAMBasicTask(Task):
     edition = 'basic'
 
     def requires(self):
-        return DownloadDatasetHadoopTask(destination=raw_data_s3_url(ToastConfig().config['name']))
+        return DownloadDatasetHadoopTask(destination=raw_data_s3n_url(ToastConfig().config['name']))
 
     def run(self):
         format = ToastConfig().config['sources'][0]['format'].lower()
@@ -267,7 +276,7 @@ class ADAMBasicTask(Task):
         p.wait()
 
     def output(self):
-        return S3FlagTarget(
+        return flagTarget(
             target_s3_url(ToastConfig().config['name'], edition=self.edition))
 
 
@@ -295,14 +304,14 @@ class ADAMFlattenTask(Task):
         p.wait()
 
     def output(self):
-        return S3FlagTarget(
+        return flagTarget(
             target_s3_url(ToastConfig().config['name'], edition=self.edition))
 
 
 class ToastTask(Task):
 
     def output(self):
-        return S3FlagTarget(
+        return flagTarget(
             target_s3_url(ToastConfig().config['name'], edition=self.edition))
 
 
