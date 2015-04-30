@@ -18,20 +18,14 @@ import os
 
 from eggo.util import random_id
 
-
-EGGO_BUCKET = 'bdg-eggo'
 # path to store raw input data
-S3_RAW_DATA_KEY_PREFIX = 'raw'
-# each module load/invocation will generate a new temp location in S3
-S3_TMP_DATA_KEY_PREFIX = random_id()
+RAW_DATA_KEY_PREFIX = 'raw'
+# each module load/invocation will generate a new temp location in the distributed fs
+TMP_DATA_KEY_PREFIX = random_id()
 
-EGGO_S3_BUCKET_URL = 's3://{0}'.format(EGGO_BUCKET)
-EGGO_S3_TMP_URL = os.path.join(EGGO_S3_BUCKET_URL, S3_TMP_DATA_KEY_PREFIX)
-EGGO_S3_RAW_URL = os.path.join(EGGO_S3_BUCKET_URL, S3_RAW_DATA_KEY_PREFIX)
-
-EGGO_S3N_BUCKET_URL = 's3n://{0}'.format(EGGO_BUCKET)
-EGGO_S3N_TMP_URL = os.path.join(EGGO_S3N_BUCKET_URL, S3_TMP_DATA_KEY_PREFIX)
-EGGO_S3N_RAW_URL = os.path.join(EGGO_S3N_BUCKET_URL, S3_RAW_DATA_KEY_PREFIX)
+EGGO_BASE_URL = os.environ.get('EGGO_BASE_URL', 's3n://bdg-eggo')
+EGGO_TMP_URL = os.path.join(EGGO_BASE_URL, TMP_DATA_KEY_PREFIX)
+EGGO_RAW_URL = os.path.join(EGGO_BASE_URL, RAW_DATA_KEY_PREFIX)
 
 
 def validate_config(d):

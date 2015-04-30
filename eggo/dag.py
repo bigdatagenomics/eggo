@@ -30,22 +30,20 @@ from luigi.hdfs import HdfsClient, HdfsTarget
 from luigi.hadoop import JobTask, HadoopJobRunner
 from luigi.parameter import Parameter
 
-from eggo.config import (
-    validate_config, EGGO_S3N_BUCKET_URL,
-    EGGO_S3N_RAW_URL, EGGO_S3N_TMP_URL)
+from eggo.config import validate_config, EGGO_BASE_URL, EGGO_RAW_URL, EGGO_TMP_URL
 from eggo.util import random_id, build_dest_filename
 
 
 def raw_data_url(dataset_name):
-    return os.path.join(EGGO_S3N_RAW_URL, dataset_name) + '/'
+    return os.path.join(EGGO_RAW_URL, dataset_name) + '/'
 
 
 def target_url(dataset_name, format='bdg', edition='basic'):
-    return os.path.join(EGGO_S3N_BUCKET_URL, dataset_name, format, edition) + '/'
+    return os.path.join(EGGO_BASE_URL, dataset_name, format, edition) + '/'
 
 
 def dataset_url(dataset_name):
-    return os.path.join(EGGO_S3N_BUCKET_URL, dataset_name) + '/'
+    return os.path.join(EGGO_BASE_URL, dataset_name) + '/'
 
 
 def flagTarget(path):
@@ -91,14 +89,14 @@ def _dnload_to_local_upload_to_hadoop(source, destination, compression):
             p = Popen(decompr_cmd.format(tmp_dir=tmp_dir), shell=True)
             p.wait()
 
-        # 3. upload to tmp Hadoop location
+        # 3. upload to tmp distributed filesystem location (e.g. S3)
         hadoop_home = os.environ.get('HADOOP_HOME', '/root/ephemeral-hdfs')
-        tmp_hadoop_path = os.path.join(EGGO_S3N_TMP_URL, random_id())
+        tmp_hadoop_path = os.path.join(EGGO_TMP_URL, random_id())
         upload_cmd = 'pushd {tmp_dir} && ' \
                      '{hadoop_home}/bin/hadoop fs -mkdir -p {tmp_hadoop_dir} && ' \
                      '{hadoop_home}/bin/hadoop fs -put ./* {tmp_path} && popd'
         p = Popen(upload_cmd.format(tmp_dir=tmp_dir, hadoop_home=hadoop_home,
-                                    tmp_hadoop_dir=EGGO_S3N_TMP_URL,
+                                    tmp_hadoop_dir=EGGO_TMP_URL,
                                     tmp_path=tmp_hadoop_path),
                   shell=True)
         p.wait()
