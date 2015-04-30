@@ -309,14 +309,63 @@ class ToastTask(Task):
         return flag_target(
             target_url(ToastConfig().config['name'], edition=self.edition))
 
+class ADAMPartitionTask(Task):
+
+    adam_command = Parameter()
+    allowed_file_formats = Parameter()
+    source_edition = Parameter()
+    edition = Parameter()
+    partition_strategy_file = Parameter()
+    parallelism = Parameter()
+
+    def requires(self):
+        return ADAMBasicTask(adam_command=self.adam_command,
+                             allowed_file_formats=self.allowed_file_formats)
+
+    def run(self):
+        adam_cmd = ('{hadoop_home}/bin/hadoop jar {adam_partitioning_jar}'
+                    ' CrunchPartitionTool -D mapreduce.job.reduces={parallelism}'
+                    ' {partition_strategy_file} {source} {target}').format(
+            hadoop_home=os.environ['HADOOP_HOME'],
+            adam_partitioning_jar=os.environ['ADAM_PARTITIONING_JAR'],
+            parallelism=self.parallelism,
+            partition_strategy_file=self.partition_strategy_file,
+            source=target_s3n_url(ToastConfig().config['name'],
+                                  edition=self.source_edition),
+            target=target_s3n_url(ToastConfig().config['name'],
+                                  edition=self.edition))
+        p = Popen(adam_cmd, shell=True)
+        p.wait()
+
+        if p.returncode == 0:
+            create_SUCCESS_file(target_s3_url(ToastConfig().config['name'],
+                                              edition=self.edition))
+
+    def output(self):
+        return S3FlagTarget(target_s3_url(ToastConfig().config['name'],
+                                          edition=self.edition))
 
 class VCF2ADAMTask(Task):
 
     def requires(self):
+        conf = ToastConfig().config
+        parallelism = conf['numPartitionsHint'] if 'numPartitionsHint' in conf else 1
         basic = ADAMBasicTask(adam_command='vcf2adam',
                               allowed_file_formats=['vcf'])
         flat = ADAMFlattenTask(adam_command='vcf2adam',
                                allowed_file_formats=['vcf'])
+        locuspart = ADAMPartitionTask(adam_command='vcf2adam',
+                                      allowed_file_formats=['vcf'],
+                                      source_edition='basic',
+                                      edition='locuspart',
+                                      partition_strategy_file='genotypes-partition-strategy',
+                                      parallelism=parallelism)
+        flat_locuspart = ADAMPartitionTask(adam_command='vcf2adam',
+                                           allowed_file_formats=['vcf'],
+                                           source_edition='flat',
+                                           edition='flat_locuspart',
+                                           partition_strategy_file='flat-genotypes-partition-strategy',
+                                           parallelism=parallelism)
         dependencies = [basic]
         conf = ToastConfig().config
         editions = conf['editions'] if 'editions' in conf else []
@@ -325,6 +374,10 @@ class VCF2ADAMTask(Task):
                 pass # included by default
             elif edition == 'flat':
                 dependencies.append(flat)
+            elif edition == 'locuspart':
+                dependencies.append(locuspart)
+            elif edition == 'flat_locuspart':
+                dependencies.append(flat_locuspart)
         return dependencies
 
     def run(self):
@@ -337,10 +390,24 @@ class VCF2ADAMTask(Task):
 class BAM2ADAMTask(Task):
 
     def requires(self):
+        conf = ToastConfig().config
+        parallelism = conf['numPartitionsHint'] if 'numPartitionsHint' in conf else 1
         basic = ADAMBasicTask(adam_command='transform',
                               allowed_file_formats=['sam', 'bam'])
         flat = ADAMFlattenTask(adam_command='transform',
                                allowed_file_formats=['sam', 'bam'])
+        locuspart = ADAMPartitionTask(adam_command='transform',
+                                      allowed_file_formats=['sam', 'bam'],
+                                      source_edition='basic',
+                                      edition='locuspart',
+                                      partition_strategy_file='alignments-partition-strategy',
+                                      parallelism=parallelism)
+        flat_locuspart = ADAMPartitionTask(adam_command='transform',
+                                           allowed_file_formats=['sam', 'bam'],
+                                           source_edition='flat',
+                                           edition='flat_locuspart',
+                                           partition_strategy_file='flat-alignments-partition-strategy',
+                                           parallelism=parallelism)
         dependencies = [basic]
         conf = ToastConfig().config
         editions = conf['editions'] if 'editions' in conf else []
@@ -349,5 +416,9 @@ class BAM2ADAMTask(Task):
                 pass # included by default
             elif edition == 'flat':
                 dependencies.append(flat)
+            elif edition == 'locuspart':
+                dependencies.append(locuspart)
+            elif edition == 'flat_locuspart':
+                dependencies.append(flat_locuspart)
         return dependencies
 

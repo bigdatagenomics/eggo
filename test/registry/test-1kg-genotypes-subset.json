@@ -1,0 +1,10 @@
+{
+    "name": "test-1kg-genotypes-subset",
+    "title": "Test 1000 Genomes Project VCF data",
+    "dag": "VCF2ADAMTask",
+    "editions": ["basic", "flat", "locuspart", "flat_locuspart"],
+    "numPartitionsHint": 36,
+    "sources": [
+      {"format": "vcf", "compression": true, "url": "ftp://ftp-trace.ncbi.nih.gov/1000genomes/ftp/release/20110521/ALL.chr22.phase1_release_v3.20101123.snps_indels_svs.genotypes.vcf.gz"}
+    ]
+}
