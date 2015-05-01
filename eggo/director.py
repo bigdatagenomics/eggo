@@ -101,9 +101,13 @@ def create_ec2_connection():
     return boto.ec2.connect_to_region(REGION)
 
 def create_stack(cf_conn, name):
-    if len(cf_conn.describe_stacks(name)) > 0:
-        print "Stack '{n}' already exists.".format(n=name)
-        return
+    try:
+        if len(cf_conn.describe_stacks(name)) > 0:
+            print "Stack '{n}' already exists.".format(n=name)
+            return
+    except:
+        # stack does not exist
+        pass
     print "Creating stack with name '{n}'.".format(n=name)
     with open(CLOUDFORMATION_TEMPLATE, 'r') as template_file:
         template_body=template_file.read()
