@@ -66,13 +66,13 @@ class ToastConfig(Config):
 
 
 def _dnload_to_local_upload_to_hadoop(source, destination, compression):
+    EPHEMERAL_MOUNT = os.environ.get('EPHEMERAL_MOUNT', '/mnt')
+    tmp_dir = mkdtemp(prefix='tmp_eggo_', dir=EPHEMERAL_MOUNT)
+
     # source: (string) URL suitable for curl
     # destination: (string) full Hadoop path of destination file name
     # compression: (bool) whether file needs to be decompressed
     try:
-        EPHEMERAL_MOUNT = os.environ.get('EPHEMERAL_MOUNT', '/mnt')
-        tmp_dir = mkdtemp(prefix='tmp_eggo_', dir=EPHEMERAL_MOUNT)
-
         # 1. dnload file
         dnload_cmd = 'pushd {tmp_dir} && curl -L -O {source} && popd'
         p = Popen(dnload_cmd.format(tmp_dir=tmp_dir, source=source),
@@ -160,10 +160,10 @@ class PrepareHadoopDownloadTask(Task):
     hdfs_path = Parameter()
 
     def run(self):
-        try:
-            EPHEMERAL_MOUNT = os.environ.get('EPHEMERAL_MOUNT', '/mnt')
-            tmp_dir = mkdtemp(prefix='tmp_eggo_', dir=EPHEMERAL_MOUNT)
+        EPHEMERAL_MOUNT = os.environ.get('EPHEMERAL_MOUNT', '/mnt')
+        tmp_dir = mkdtemp(prefix='tmp_eggo_', dir=EPHEMERAL_MOUNT)
 
+        try:
             # build the remote command for each source
             tmp_command_file = '{0}/command_file'.format(tmp_dir)
             with open(tmp_command_file, 'w') as command_file:
