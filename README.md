@@ -82,6 +82,27 @@ fab login
 fab teardown
 ```
 
+There is experimental support for using Cloudera Director to provision a cluster. This
+is useful for running a cluster with more services, including YARN, the Hive metastore,
+YARN, and Impala; however it takes longer (>30mins) to bring up a cluster than the
+Spark EC2 scripts.
+
+```bash
+# provision a cluster on EC2 with 5 worker nodes
+fab provision_director
+
+# run a proxy to access Cloudera Manager via http://localhost:7180
+# type 'exit' to quit process
+fab cm_web_proxy
+
+# log in to the gateway node
+fab login_director
+
+# destroy the cluster
+fab teardown_director
+```
+
+
 ### Converting data sets
 
 The `toast` command will build the Luigi DAG for downloading the necessary data
@@ -120,12 +141,7 @@ TODO: have to CLI commands: `eggo` for users and `toaster` for maintainers.
 
 You can run Eggo from a local machine, which is helpful while developing Eggo itself.
 
-Ensure that Hadoop, AWS CLI, Spark, and ADAM are all installed.
-
-Make sure to set the correct path to the `hadoop` command in `client.cfg`.
-
-Set `fs.s3n.awsAccessKeyId` and `fs.s3n.awsSecretAccessKey` in Hadoop's _core-site.xml_
- file.
+Ensure that Hadoop, Spark, and ADAM are all installed.
 
 Set up the environment with:
 
@@ -138,6 +154,15 @@ export SPARK_HOME=~/sw/spark-1.3.0-bin-hadoop2.4/
 export SPARK_MASTER_URL=local
 export STREAMING_JAR=$HADOOP_HOME/share/hadoop/tools/lib/hadoop-streaming-2.5.1.jar
 export PATH=$PATH:$HADOOP_HOME/bin
+```
+
+By default, datasets will be stored on S3, and you will need to set
+`fs.s3n.awsAccessKeyId` and `fs.s3n.awsSecretAccessKey` in Hadoop's _core-site.xml_ file.
+
+To store datasets locally, set the `EGGO_BASE_URL` environment variable to a Hadoop path:
+
+```bash
+export EGGO_BASE_URL=file:///tmp/bdg-eggo
 ```
 
 Generate a test dataset with

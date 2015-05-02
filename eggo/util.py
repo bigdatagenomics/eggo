@@ -38,7 +38,7 @@ def sanitize_filename(dirty):
     return clean
 
 
-def build_s3_filename(download_url, decompress=False):
+def build_dest_filename(download_url, decompress=False):
     # inspired by datacache
     digest = md5(download_url.encode('utf-8')).hexdigest()
     filename = '{digest}.{sanitized_url}'.format(

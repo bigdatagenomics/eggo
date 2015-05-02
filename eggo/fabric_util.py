@@ -144,5 +144,5 @@ def _toast(config):
         with prefix('source eggo-ec2-variables.sh'):
             # TODO: eliminate this for central scheduler instead
             run('bin/toaster.py --local-scheduler {clazz} '
-                '--config {config}'.format(clazz=dag_class, config=config))
+                '--ToastConfig-config {config}'.format(clazz=dag_class, config=config))
             # run('./toaster.py --dataset {dataset}'.format(dataset=dataset))
