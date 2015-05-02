@@ -89,11 +89,15 @@ def _cghub_download(url, tmp_dir, cghub_key=None, n_threads=8):
                          analysis_id=analysis_id), shell=True)
     p.wait()
 
-    return os.path.join(tmp_dir, analysis_id)
+    # 4. Flatten nested directory
+    p = Popen('mv {src}/* {dst}'.format(src=analysis_id, dst=tmp_dir),
+              shell=True)
+    p.wait()
+    os.rmdir(os.path.join(tmp_dir, analysis_id))
 
 
-def _http_download(url, tmp_dir):
-    """Download URL via HTTP
+def _curl_download(url, tmp_dir):
+    """Download URL via HTTP or FTP
 
     Requires curl
     """
@@ -112,12 +116,12 @@ def _dnload_to_local_upload_to_s3(source, destination, compression):
         tmp_dir = mkdtemp(prefix='tmp_eggo_', dir=EPHEMERAL_MOUNT)
 
         # 1. dnload file
-        if source.startswith('http'):
-            _http_download(source, tmp_dir)
+        if source.startswith('http') or source.startswith('ftp'):
+            _curl_download(source, tmp_dir)
         elif source.startswith('cghub'):
             tmp_dir = _cghub_download(source, tmp_dir)
         else:
-            raise ValueError('source must be http(s) or cghub url')
+            raise ValueError('source must be ftp, http(s), or cghub url')
 
         # 2. decompress if necessary
         if compression:

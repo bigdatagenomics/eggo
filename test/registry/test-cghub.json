@@ -2,6 +2,7 @@
     "name": "cghub-test",
     "description": "Test download for CGHub records",
     "dag": "BAM2ADAMTask",
+    "editions": ["basic", "flat"],
     "sources": [   
         {"name": "CCLE-MDA-MB-361-RNA-08", "format": "bam", "compression": false, "url": "cghub://a337c425-4314-40c6-a40a-a444781bd1b7/G28034.MDA-MB-361.1.bam"}
     ]
