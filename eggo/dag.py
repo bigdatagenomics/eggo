@@ -65,7 +65,6 @@ class ToastConfig(Config):
     config = JsonFileParameter()
 
 
-<<<<<<< HEAD
 def _cghub_download(url, tmp_dir, cghub_key=None, n_threads=8):
     """Download from CGHub to TMP_DIR.
 
