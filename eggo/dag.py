@@ -19,7 +19,6 @@
 import os
 import sys
 import json
-from time import sleep
 from shutil import rmtree
 from tempfile import mkdtemp
 from subprocess import Popen
@@ -27,55 +26,127 @@ from subprocess import Popen
 from luigi import Task, Config
 from luigi.s3 import S3Target, S3FlagTarget, S3Client
 from luigi.hdfs import HdfsClient, HdfsTarget
+from luigi.file import LocalTarget
 from luigi.hadoop import JobTask, HadoopJobRunner
 from luigi.parameter import Parameter
 
-from eggo.config import validate_config, EGGO_BASE_URL, EGGO_RAW_URL, EGGO_TMP_URL
+from eggo.config import eggo_config, validate_toast_config
 from eggo.util import random_id, build_dest_filename
 
 
-def raw_data_url(dataset_name):
-    return os.path.join(EGGO_RAW_URL, dataset_name) + '/'
-
-
-def target_url(dataset_name, format='bdg', edition='basic'):
-    return os.path.join(EGGO_BASE_URL, dataset_name, format, edition) + '/'
-
-
-def dataset_url(dataset_name):
-    return os.path.join(EGGO_BASE_URL, dataset_name) + '/'
-
-
-def flag_target(path):
-    if path.startswith("s3:") or path.startswith("s3n:"):
-        return S3FlagTarget(path)
-    return HdfsTarget(path)
-
-
 class JsonFileParameter(Parameter):
-
     def parse(self, p):
         with open(p, 'r') as ip:
             json_data = json.load(ip)
-        validate_config(json_data)
+        validate_toast_config(json_data)
         return json_data
 
 
 class ToastConfig(Config):
-    config = JsonFileParameter()
+    config = JsonFileParameter()  # the toast (JSON) configuration
+
+    def raw_data_url(self):
+        return os.path.join(eggo_config.get('core', 'eggo_base_url'),
+                            eggo_config.get('paths', 'dfs_raw_data_prefix'),
+                            self.config['name'])
+
+    def dataset_url(self):
+        return os.path.join(eggo_config.get('core', 'eggo_base_url'),
+                            self.config['name'])
+
+    def edition_url(self, format='bdg', edition='basic'):
+        return os.path.join(eggo_config.get('core', 'eggo_base_url'),
+                            self.config['name'], format, edition)
+
+    def dfs_tmp_data_url(self):
+        return os.path.join(eggo_config.get('core', 'eggo_base_url'),
+                            eggo_config.get('paths', 'dfs_tmp_data_prefix'),
+                            self.config['name'],
+                            eggo_config.get('paths', 'random_id'))
 
 
-def _dnload_to_local_upload_to_hadoop(source, destination, compression):
-    EPHEMERAL_MOUNT = os.environ.get('EPHEMERAL_MOUNT', '/mnt')
-    tmp_dir = mkdtemp(prefix='tmp_eggo_', dir=EPHEMERAL_MOUNT)
+class EggoS3FlagTarget(S3FlagTarget):
+    # NOTE: we are implementing our own version of S3FlagTarget even though
+    # Luigi supplies this class because the Luigi version requires paths to end
+    # in a slash, which is annoying to keep track of.  Instead, we join paths
+    # using os.path.join()
+    def __init__(self, path, format=None, client=None, flag='_SUCCESS'):
+        # skip luigi.s3.S3FlagTarget and init *its* superclass: luigi.s3.S3Target
+        super(S3FlagTarget, self).__init__(path)
+        self.flag = flag
 
+    def exists(self):
+        return self.fs.exists(os.path.join(self.path, self.flag))
+
+
+class HdfsFlagTarget(HdfsTarget):
+    def __init__(self, path, flag='_SUCCESS'):
+        super(HdfsFlagTarget, self).__init__(path)
+        self.flag = flag
+
+    def exists(self):
+        return self.fs.exists(os.path.join(self.path, self.flag))
+
+
+class LocalFlagTarget(LocalTarget):
+    def __init__(self, path, flag='_SUCCESS'):
+        super(LocalFlagTarget, self).__init__(path)
+        self.flag = flag
+
+    def exists(self):
+        return self.fs.exists(os.path.join(self.path, self.flag))
+
+
+def flag_target(path):
+    if (path.startswith('s3:') or path.startswith('s3n:')
+            or path.startswith('s3a:')):
+        return EggoS3FlagTarget(path)
+    elif path.startswith('hdfs:'):
+        return HdfsFlagTarget(path)
+    elif path.startswith('file:'):
+        return LocalFlagTarget(path)
+    else:
+        raise ValueError('Unrecognized URI protocol: {path}'.format(path))
+
+
+def file_target(path):
+    if (path.startswith('s3:') or path.startswith('s3n:')
+            or path.startswith('s3a:')):
+        return S3Target(path)
+    elif path.startswith('hdfs:'):
+        return HdfsTarget(path)
+    elif path.startswith('file:'):
+        return LocalTarget(path)
+    else:
+        raise ValueError('Unrecognized URI protocol: {path}'.format(path))
+
+
+def create_SUCCESS_file(path):
+    if (path.startswith('s3:') or path.startswith('s3n:')
+            or path.startswith('s3a:')):
+        s3_client = S3Client(eggo_config.get('aws', 'aws_access_key_id'),
+                            eggo_config.get('aws', 'aws_secret_access_key'))
+        s3_client.put_string('', os.path.join(path, '_SUCCESS'))
+    elif path.startswith('hdfs:'):
+        hdfs_client = HdfsClient()
+        hdfs_client.put('/dev/null', os.path.join(path, '_SUCCESS'))
+    elif path.startswith('file:'):
+        open(os.path.join(path, '_SUCCESS'), 'a').close()
+
+
+def _dnload_to_local_upload_to_dfs(source, destination, compression):
     # source: (string) URL suitable for curl
     # destination: (string) full Hadoop path of destination file name
     # compression: (bool) whether file needs to be decompressed
     try:
+        tmp_local_dir = mkdtemp(
+        prefix='tmp_eggo_',
+        dir=eggo_config.get('paths', 'worker_data_dir'))
+        
         # 1. dnload file
-        dnload_cmd = 'pushd {tmp_dir} && curl -L -O {source} && popd'
-        p = Popen(dnload_cmd.format(tmp_dir=tmp_dir, source=source),
+        dnload_cmd = 'pushd {tmp_local_dir} && curl -L -O {source} && popd'
+        p = Popen(dnload_cmd.format(tmp_local_dir=tmp_local_dir,
+                                    source=source),
                   shell=True)
         p.wait()
 
@@ -83,56 +154,64 @@ def _dnload_to_local_upload_to_hadoop(source, destination, compression):
         if compression:
             compression_type = os.path.splitext(source)[-1]
             if compression_type == '.gz':
-                decompr_cmd = ('pushd {tmp_dir} && gunzip *.gz && popd')
+                decompr_cmd = ('pushd {tmp_local_dir} && gunzip *.gz && popd')
             else:
                 raise ValueError("Unknown compression type: {0}".format(
                     compression_type))
-            p = Popen(decompr_cmd.format(tmp_dir=tmp_dir), shell=True)
+            p = Popen(decompr_cmd.format(tmp_local_dir=tmp_local_dir),
+                      shell=True)
             p.wait()
 
-        # 3. upload to tmp distributed filesystem location (e.g. S3)
-        hadoop_home = os.environ.get('HADOOP_HOME', '/root/ephemeral-hdfs')
-        tmp_hadoop_path = os.path.join(EGGO_TMP_URL, random_id())
-        upload_cmd = 'pushd {tmp_dir} && ' \
-                     '{hadoop_home}/bin/hadoop fs -mkdir -p {tmp_hadoop_dir} && ' \
-                     '{hadoop_home}/bin/hadoop fs -put ./* {tmp_path} && popd'
-        p = Popen(upload_cmd.format(tmp_dir=tmp_dir, hadoop_home=hadoop_home,
-                                    tmp_hadoop_dir=EGGO_TMP_URL,
-                                    tmp_path=tmp_hadoop_path),
-                  shell=True)
-        p.wait()
+        try:
+            # 3. upload to tmp distributed filesystem location (e.g. S3)
+            tmp_staged_dir = os.path.join(
+                eggo_config.get('core', 'eggo_base_url'),
+                eggo_config.get('paths', 'dfs_tmp_data_prefix'),
+                eggo_config.get('paths', 'random_id'),
+                'staged',
+                random_id())
+            upload_cmd = ('pushd {tmp_local_dir} && '
+                          '{hadoop_home}/bin/hadoop fs -mkdir -p {tmp_dfs_dir} && '
+                          '{hadoop_home}/bin/hadoop fs -put ./* {tmp_dfs_dir} && '
+                          'popd')
+            p = Popen(upload_cmd.format(tmp_local_dir=tmp_local_dir,
+                                        hadoop_home=eggo_config.get('worker_env',
+                                                                    'hadoop_home'),
+                                        tmp_dfs_dir=tmp_staged_dir),
+                      shell=True)
+            p.wait()
 
-        # 4. rename to final target location
-        rename_cmd = '{hadoop_home}/bin/hadoop fs -mv {tmp_path} {final_path}'
-        p = Popen(rename_cmd.format(tmp_path=tmp_hadoop_path, hadoop_home=hadoop_home,
-                                    final_path=destination),
-                  shell=True)
-        p.wait()
+            # 4. rename to final target location
+            rename_cmd = '{hadoop_home}/bin/hadoop fs -mv {tmp_path} {final_path}'
+            p = Popen(rename_cmd.format(tmp_path=tmp_staged_dir,
+                                        hadoop_home=eggo_config.get('worker_env',
+                                                                    'hadoop_home'),
+                                        final_path=destination),
+                      shell=True)
+            p.wait()
+        except:
+            raise
+        finally:
+            pass # TODO: clean up dfs tmp dir
     except:
         raise
     finally:
-        rmtree(tmp_dir)
+        rmtree(tmp_local_dir)
 
 
-def create_SUCCESS_file(s3_path):
-    s3client = S3Client(os.environ['AWS_ACCESS_KEY_ID'],
-                        os.environ['AWS_SECRET_ACCESS_KEY'])
-    s3client.put_string('', os.path.join(s3_path, '_SUCCESS'))
-
-
-class DownloadFileToS3Task(Task):
+class DownloadFileToDFSTask(Task):
     """Download a file, decompress, and move to S3."""
 
     source = Parameter()  # string: URL suitable for curl
-    target = Parameter()  # string: full S3 path of destination file name
+    target = Parameter()  # string: full URL path of destination file name
     compression = Parameter()  # bool: whether file needs to be decompressed
 
     def run(self):
-        _dnload_to_local_upload_to_hadoop(
+        _dnload_to_local_upload_to_dfs(
             self.source, self.target, self.compression)
 
     def output(self):
-        return S3Target(path=self.target)
+        return file_target(path=self.target)
 
 
 class DownloadDatasetTask(Task):
@@ -144,7 +223,7 @@ class DownloadDatasetTask(Task):
         for source in ToastConfig().config['sources']:
             dest_name = build_dest_filename(source['url'],
                                             decompress=source['compression'])
-            yield DownloadFileToS3Task(
+            yield DownloadFileToDFSTask(
                 source=source['url'],
                 target=os.path.join(self.destination, dest_name),
                 compression=source['compression'])
@@ -160,9 +239,9 @@ class PrepareHadoopDownloadTask(Task):
     hdfs_path = Parameter()
 
     def run(self):
-        EPHEMERAL_MOUNT = os.environ.get('EPHEMERAL_MOUNT', '/mnt')
-        tmp_dir = mkdtemp(prefix='tmp_eggo_', dir=EPHEMERAL_MOUNT)
-
+        tmp_dir = mkdtemp(
+            prefix='tmp_eggo_',
+            dir=eggo_config.get('paths', 'worker_data_dir'))
         try:
             # build the remote command for each source
             tmp_command_file = '{0}/command_file'.format(tmp_dir)
@@ -185,18 +264,18 @@ class PrepareHadoopDownloadTask(Task):
 
 class DownloadDatasetHadoopTask(JobTask):
     destination = Parameter()  # full Hadoop path to put data
-    tmp_dir = Parameter(default=random_id(prefix='tmp_eggo_cmds'))
 
     def requires(self):
-        # TODO: get a proper temp file here
-        tmp_hdfs_path = '/tmp/{tmp_dir}'.format(tmp_dir=self.tmp_dir)
-        return PrepareHadoopDownloadTask(hdfs_path=tmp_hdfs_path)
+        return PrepareHadoopDownloadTask(
+            hdfs_path=ToastConfig().dfs_tmp_data_url())
 
     def job_runner(self):
         addl_conf = {'mapred.map.tasks.speculative.execution': 'false',
                      'mapred.task.timeout': 12000000}
-        streaming_args=['-cmdenv', 'AWS_ACCESS_KEY_ID=' + os.environ['AWS_ACCESS_KEY_ID'],
-                        '-cmdenv', 'AWS_SECRET_ACCESS_KEY=' + os.environ['AWS_SECRET_ACCESS_KEY']]
+        # TODO: can we delete this with Director? does it set AWS cred in core-site.xml?
+        streaming_args=['-cmdenv', 'EGGO_CONFIG=' + eggo_config.get('worker_env', 'eggo_config_worker_path'),
+                        '-cmdenv', 'AWS_ACCESS_KEY_ID=' + eggo_config.get('aws', 'aws_access_key_id'),
+                        '-cmdenv', 'AWS_SECRET_ACCESS_KEY=' + eggo_config.get('aws', 'aws_secret_access_key')]
         return HadoopJobRunner(streaming_jar=os.environ['STREAMING_JAR'],
                                streaming_args=streaming_args,
                                jobconfs=addl_conf,
@@ -210,12 +289,12 @@ class DownloadDatasetHadoopTask(JobTask):
                                         decompress=source['compression'])
         dest_url = os.path.join(self.destination, dest_name)
         if dest_url.startswith("s3:") or dest_url.startswith("s3n:"):
-            client = S3Client(os.environ['AWS_ACCESS_KEY_ID'],
-                              os.environ['AWS_SECRET_ACCESS_KEY'])
+            client = S3Client(eggo_config.get('aws', 'aws_access_key_id'),
+                              eggo_config.get('aws', 'aws_secret_access_key'))
         else:
             client = HdfsClient()
         if not client.exists(dest_url):
-            _dnload_to_local_upload_to_hadoop(
+            _dnload_to_local_upload_to_dfs(
                 source['url'], dest_url, source['compression'])
 
         yield (source['url'], 1)  # dummy output
@@ -227,10 +306,10 @@ class DownloadDatasetHadoopTask(JobTask):
 class DeleteDatasetTask(Task):
 
     def run(self):
-        hadoop_home = os.environ.get('HADOOP_HOME', '/root/ephemeral-hdfs')
         delete_raw_cmd = '{hadoop_home}/bin/hadoop fs -rm -r {raw} {target}'.format(
-            hadoop_home=hadoop_home, raw=raw_data_url(ToastConfig().config['name']),
-            target=dataset_url(ToastConfig().config['name']))
+            hadoop_home=eggo_config.get('worker_env', 'hadoop_home'),
+            raw=ToastConfig().raw_data_url(),
+            target=ToastConfig().dataset_url())
         p = Popen(delete_raw_cmd, shell=True)
         p.wait()
 
@@ -242,7 +321,8 @@ class ADAMBasicTask(Task):
     edition = 'basic'
 
     def requires(self):
-        return DownloadDatasetHadoopTask(destination=raw_data_url(ToastConfig().config['name']))
+        return DownloadDatasetHadoopTask(
+            destination=ToastConfig().raw_data_url())
 
     def run(self):
         format = ToastConfig().config['sources'][0]['format'].lower()
@@ -254,25 +334,23 @@ class ADAMBasicTask(Task):
         tmp_hadoop_path = '/tmp/{rand_id}.{format}'.format(rand_id=random_id(),
                                                            format=format)
         distcp_cmd = '{hadoop_home}/bin/hadoop distcp {source} {target}'.format(
-            hadoop_home=os.environ['HADOOP_HOME'],
-            source=raw_data_url(ToastConfig().config['name']), target=tmp_hadoop_path)
+            hadoop_home=eggo_config.get('worker_env', 'hadoop_home'),
+            source=ToastConfig().raw_data_url(), target=tmp_hadoop_path)
         p = Popen(distcp_cmd, shell=True)
         p.wait()
 
         # 2. Run the adam-submit job
-        adam_cmd = ('{adam_home}/bin/adam-submit --master {spark_master_url} {adam_command}'
+        adam_cmd = ('{adam_home}/bin/adam-submit --master {spark_master_uri} {adam_command}'
                     '    {source} {target}').format(
                         adam_home=os.environ['ADAM_HOME'],
-                        spark_master_url=os.environ['SPARK_MASTER_URL'],
+                        spark_master_uri=os.environ['SPARK_MASTER_URI'],
                         adam_command=self.adam_command, source=tmp_hadoop_path,
-                        target=target_url(ToastConfig().config['name'],
-                                              edition=self.edition))
+                        target=ToastConfig().edition_url(edition=self.edition))
         p = Popen(adam_cmd, shell=True)
         p.wait()
 
     def output(self):
-        return flag_target(
-            target_url(ToastConfig().config['name'], edition=self.edition))
+        return flag_target(ToastConfig().edition_url(edition=self.edition))
 
 
 class ADAMFlattenTask(Task):
@@ -287,27 +365,24 @@ class ADAMFlattenTask(Task):
                              allowed_file_formats=self.allowed_file_formats)
 
     def run(self):
-        adam_cmd = ('{adam_home}/bin/adam-submit --master {spark_master_url} flatten'
+        adam_cmd = ('{adam_home}/bin/adam-submit --master {spark_master_uri} flatten'
                     '    {source} {target}').format(
                         adam_home=os.environ['ADAM_HOME'],
-                        spark_master_url=os.environ['SPARK_MASTER_URL'],
-                        source=target_url(ToastConfig().config['name'],
-                                              edition=self.source_edition),
-                        target=target_url(ToastConfig().config['name'],
-                                              edition=self.edition))
+                        spark_master_uri=os.environ['SPARK_MASTER_URI'],
+                        source=ToastConfig().edition_url(
+                            edition=self.source_edition),
+                        target=ToastConfig().edition_url(edition=self.edition))
         p = Popen(adam_cmd, shell=True)
         p.wait()
 
     def output(self):
-        return flag_target(
-            target_url(ToastConfig().config['name'], edition=self.edition))
+        return flag_target(ToastConfig().edition_url(edition=self.edition))
 
 
 class ToastTask(Task):
 
     def output(self):
-        return flag_target(
-            target_url(ToastConfig().config['name'], edition=self.edition))
+        return flag_target(ToastConfig().edition_url(edition=self.edition))
 
 
 class VCF2ADAMTask(Task):

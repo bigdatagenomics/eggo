@@ -14,29 +14,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import boto
-import boto.cloudformation
-import boto.ec2
-from boto.ec2.networkinterface import NetworkInterfaceCollection, NetworkInterfaceSpecification
 import itertools
 import os
 import sys
 import time
-from datetime import datetime
-from fabric.api import local, env, run, execute, prefix, put, open_shell
 from tempfile import mkdtemp
+from datetime import datetime
 
-REGION = 'us-east-1'
-LAUNCHER_AMI = 'ami-a25415cb' # RHEL 6.4 x86
-LAUNCHER_INSTANCE_TYPE = 'm3.large'
-CLUSTER_AMI = LAUNCHER_AMI
-AWS_ACCESS_KEY_ID = os.environ['AWS_ACCESS_KEY_ID']
-AWS_SECRET_ACCESS_KEY = os.environ['AWS_SECRET_ACCESS_KEY']
-EC2_KEY_PAIR = os.environ['EC2_KEY_PAIR']
-EC2_PRIVATE_KEY_FILE = os.environ['EC2_PRIVATE_KEY_FILE']
-STACK_NAME = 'bdg-eggo-{key_pair}'.format(key_pair=EC2_KEY_PAIR)
-CLOUDFORMATION_TEMPLATE='conf/cfn-cloudera-us-east-1-public-subnet.template'
-DIRECTOR_CONF_TEMPLATE='conf/aws.conf'
+import boto.ec2
+import boto.cloudformation
+from boto.ec2.networkinterface import (
+    NetworkInterfaceCollection, NetworkInterfaceSpecification)
+from fabric.api import local, env, run, execute, prefix, put, open_shell
+
+from eggo.config import eggo_config
+
+
+AWS_ACCESS_KEY_ID = eggo_config.get('aws', 'aws_access_key_id')
+AWS_SECRET_ACCESS_KEY = eggo_config.get('aws', 'aws_secret_access_key')
+EC2_KEY_PAIR = eggo_config.get('aws', 'ec2_key_pair')
+EC2_PRIVATE_KEY_FILE = eggo_config.get('aws', 'ec2_private_key_file')
+
+REGION = eggo_config.get('director', 'region')
+LAUNCHER_INSTANCE_TYPE = eggo_config.get('director', 'launcher_instance_type')
+LAUNCHER_AMI = eggo_config.get('director', 'launcher_ami')
+CLUSTER_AMI = eggo_config.get('director', 'cluster_ami')
+STACK_NAME = eggo_config.get('director', 'stack_name')
+CLOUDFORMATION_TEMPLATE = eggo_config.get('director', 'cloudformation_template')
+DIRECTOR_CONF_TEMPLATE = eggo_config.get('director', 'director_conf_template')
 
 def provision():
     # create cloud formation stack (VPC etc)
@@ -68,7 +73,7 @@ def web_proxy(instance_name, port):
     local('ssh -i {private_key} -o UserKnownHostsFile=/dev/null '
           '-o StrictHostKeyChecking=no -L {port}:{cm_private_ip}:{port} '
           'ec2-user@{cm_public_ip}'.format(
-        private_key=os.environ['EC2_PRIVATE_KEY_FILE'],
+        private_key=EC2_PRIVATE_KEY_FILE,
         port=port,
         cm_private_ip=instance.private_ip_address,
         cm_public_ip=instance.ip_address))
