@@ -27,6 +27,7 @@ EGGO_BASE_URL = os.environ.get('EGGO_BASE_URL', 's3n://bdg-eggo')
 EGGO_TMP_URL = os.path.join(EGGO_BASE_URL, TMP_DATA_KEY_PREFIX)
 EGGO_RAW_URL = os.path.join(EGGO_BASE_URL, RAW_DATA_KEY_PREFIX)
 
+CGHUB_PUBLIC_KEY = 'https://cghub.ucsc.edu/software/downloads/cghub_public.key'
 
 def validate_config(d):
     """Validate a JSON config file for an eggo dataset"""

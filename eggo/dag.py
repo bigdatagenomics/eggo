@@ -30,7 +30,7 @@ from luigi.hdfs import HdfsClient, HdfsTarget
 from luigi.hadoop import JobTask, HadoopJobRunner
 from luigi.parameter import Parameter
 
-from eggo.config import validate_config, EGGO_BASE_URL, EGGO_RAW_URL, EGGO_TMP_URL
+from eggo.config import validate_config, EGGO_BASE_URL, EGGO_RAW_URL, EGGO_TMP_URL, CGHUB_PUBLIC_KEY
 from eggo.util import random_id, build_dest_filename
 
 
@@ -65,6 +65,44 @@ class ToastConfig(Config):
     config = JsonFileParameter()
 
 
+def _cghub_download(url, tmp_dir, cghub_key=None, n_threads=8):
+    """Download from CGHub to TMP_DIR.
+
+    Requires GeneTorrent. Download client `gtdownload` must be
+    on PATH. Use public key if none provided and CGHUB_KEY
+    environment variable not set. Returns analysis subdirectory.
+    """
+    # 1. Check env for CGHub key and substitute public if necessary
+    if cghub_key is None:
+        cghub_key = os.environ.get('CGHUB_KEY') or CGHUB_PUBLIC_KEY
+
+    # 2. Parse url for analysis ID and filename
+    analysis_id, filename = url.lstrip('cghub://').split('/')
+
+    # 3. Download with gtdownload
+    cmd = 'gtdownload -c {keypath} -p {prefix} --max-children {threads} -v {analysis_id}'
+    p = Popen(cmd.format(keypath=cghub_key, prefix=tmp_dir, threads=n_threads,
+                         analysis_id=analysis_id), shell=True)
+    p.wait()
+
+    # 4. Flatten nested directory
+    p = Popen('mv {src}/* {dst}'.format(src=analysis_id, dst=tmp_dir),
+              shell=True)
+    p.wait()
+    os.rmdir(os.path.join(tmp_dir, analysis_id))
+
+
+def _curl_download(url, tmp_dir):
+    """Download URL via HTTP or FTP
+
+    Requires curl
+    """
+    dnload_cmd = 'pushd {tmp_dir} && curl -L -O {source} && popd'
+    p = Popen(dnload_cmd.format(tmp_dir=tmp_dir, source=url),
+              shell=True)
+    p.wait()
+
+
 def _dnload_to_local_upload_to_hadoop(source, destination, compression):
     EPHEMERAL_MOUNT = os.environ.get('EPHEMERAL_MOUNT', '/mnt')
     tmp_dir = mkdtemp(prefix='tmp_eggo_', dir=EPHEMERAL_MOUNT)
@@ -74,10 +112,12 @@ def _dnload_to_local_upload_to_hadoop(source, destination, compression):
     # compression: (bool) whether file needs to be decompressed
     try:
         # 1. dnload file
-        dnload_cmd = 'pushd {tmp_dir} && curl -L -O {source} && popd'
-        p = Popen(dnload_cmd.format(tmp_dir=tmp_dir, source=source),
-                  shell=True)
-        p.wait()
+        if source.startswith('http') or source.startswith('ftp'):
+            _curl_download(source, tmp_dir)
+        elif source.startswith('cghub'):
+            tmp_dir = _cghub_download(source, tmp_dir)
+        else:
+            raise ValueError('source must be ftp, http(s), or cghub url')
 
         # 2. decompress if necessary
         if compression:
