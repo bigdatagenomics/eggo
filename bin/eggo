@@ -15,34 +15,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# args: EPHEMERAL_MOUNT SOURCE_URL COMPRESSION_TYPE TMP_S3_PATH FINAL_S3_PATH
-# COMPRESSION_TYPE can be NONE or GZIP
+# TODO: weaken the requirements of setting these variables.  If eggo is pip-
+# installed in the future, then EGGO_HOME can default to the site-packages
+# install location.  If it's just an "end-user" looking to browse available
+# data sets etc., there may not be need for the user to have EGGO_CONF set
 
-# download the file locally
-if [ -f /root/eggo/eggo-ec2-variables.sh ]; then
-  source /root/eggo/eggo-ec2-variables.sh
+if [ -z "$EGGO_HOME" ]; then
+	echo >&2 "EGGO_HOME is unset. Aborting."
+	exit 1
 fi
-export EGGO_TMP_DIR=$(mktemp -d --tmpdir=$1 tmp_eggo_XXXX)
-pushd $EGGO_TMP_DIR
-curl -L -O $2
 
-# decompress if necessary
-case $3 in
-    NONE)
-        ;;
-    GZIP)
-        gunzip *.gz
-        ;;
-    *)
-        echo "Expected NONE or GZIP; got $3."
-        popd
-        rm -rf $EGGO_TMP_DIR
-        exit 1
-        ;;
-esac
+if [ -z "$EGGO_CONFIG" ]; then
+	echo >&2 "EGGO_CONFIG is unset. Aborting."
+	exit 1
+fi
 
-# upload to S3
-aws s3 cp ./* $4
-aws s3 mv $4 $5
-popd
-rm -rf $EGGO_TMP_DIR
+# Check if fabric is installed
+command -v fab >/dev/null 2>&1 || { echo >&2 "fab not found on PATH. Aborting."; exit 1; }
+
+fab -f "$EGGO_HOME/eggo/fabric_cli.py" "$@"

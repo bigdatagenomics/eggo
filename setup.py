@@ -32,7 +32,7 @@ setup(
     url='https://github.com/bigdatagenomics/eggo',
     packages=find_packages(),
     include_package_data=True,
-    scripts=['bin/toaster.py'],
+    scripts=['bin/eggo', 'bin/toaster.py'],
     install_requires=['fabric', 'luigi'],
     keywords=('bdg adam spark eggo genomics omics public data'),
     license='Apache License, Version 2.0',

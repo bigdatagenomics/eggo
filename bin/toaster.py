@@ -17,10 +17,9 @@
 
 """Exposes top-level Luigi Tasks associated with ETLing the datasets."""
 
-# these classes must accept a "config" parameter which takes the json file
+# Only top-level "user-facing" Luigi DAGs should be imported here
 
 from eggo.dag import VCF2ADAMTask, BAM2ADAMTask
-
 
 if __name__ == '__main__':
     from luigi import run

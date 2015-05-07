@@ -22,7 +22,7 @@ from hashlib import md5
 from datetime import datetime
 
 
-def random_id(prefix='tmp', n=4):
+def random_id(prefix='tmp_eggo', n=4):
     dt_string = datetime.now().strftime('%Y-%m-%dT%H-%M-%S')
     rand_string = ''.join(random.sample(string.ascii_uppercase, n))
     return '{pre}_{dt}_{rand}'.format(pre=prefix, dt=dt_string,
@@ -38,11 +38,11 @@ def sanitize_filename(dirty):
     return clean
 
 
-def build_dest_filename(download_url, decompress=False):
+def build_dest_filename(source_uri, decompress=False):
     # inspired by datacache
-    digest = md5(download_url.encode('utf-8')).hexdigest()
-    filename = '{digest}.{sanitized_url}'.format(
-        digest=digest, sanitized_url=sanitize_filename(download_url))
+    digest = md5(source_uri.encode('utf-8')).hexdigest()
+    filename = '{digest}.{sanitized_uri}'.format(
+        digest=digest, sanitized_uri=sanitize_filename(source_uri))
     if decompress:
         (base, ext) = os.path.splitext(filename)
         if ext == '.gz':

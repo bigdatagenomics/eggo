@@ -8,6 +8,11 @@ converting the data sets yourself, simply get them from the eggo S3 bucket:
 s3://bdg-eggo
 ```
 
+Eggo also provides a command-line interface for easily provisioning Hadoop
+clusters in the cloud (built using Fabric) and also the necessary code to
+convert the data sets from the legacy formats into the Hadoop-friendly versions
+(built with Luigi).
+
 ## User interface
 
 Not implemented yet.
@@ -151,7 +156,7 @@ export EPHEMERAL_MOUNT=/tmp
 export ADAM_HOME=~/workspace/adam
 export HADOOP_HOME=~/sw/hadoop-2.5.1/
 export SPARK_HOME=~/sw/spark-1.3.0-bin-hadoop2.4/
-export SPARK_MASTER_URL=local
+export SPARK_MASTER_URI=local
 export STREAMING_JAR=$HADOOP_HOME/share/hadoop/tools/lib/hadoop-streaming-2.5.1.jar
 export PATH=$PATH:$HADOOP_HOME/bin
 ```
