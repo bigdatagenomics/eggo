@@ -46,23 +46,21 @@ class ToastConfig(Config):
     config = JsonFileParameter()  # the toast (JSON) configuration
 
     def raw_data_url(self):
-        return os.path.join(eggo_config.get('core', 'eggo_base_url'),
-                            eggo_config.get('paths', 'dfs_raw_data_prefix'),
+        return os.path.join(eggo_config.get('dfs', 'dfs_raw_data_url'),
                             self.config['name'])
 
     def dataset_url(self):
-        return os.path.join(eggo_config.get('core', 'eggo_base_url'),
+        return os.path.join(eggo_config.get('dfs', 'dfs_root_url'),
                             self.config['name'])
 
     def edition_url(self, format='bdg', edition='basic'):
-        return os.path.join(eggo_config.get('core', 'eggo_base_url'),
+        return os.path.join(eggo_config.get('dfs', 'dfs_root_url'),
                             self.config['name'], format, edition)
 
     def dfs_tmp_data_url(self):
-        return os.path.join(eggo_config.get('core', 'eggo_base_url'),
-                            eggo_config.get('paths', 'dfs_tmp_data_prefix'),
+        return os.path.join(eggo_config.get('dfs', 'dfs_tmp_data_url'),
                             self.config['name'],
-                            eggo_config.get('paths', 'random_id'))
+                            eggo_config.get('execution', 'random_id'))
 
 
 class EggoS3FlagTarget(S3FlagTarget):
@@ -140,8 +138,8 @@ def _dnload_to_local_upload_to_dfs(source, destination, compression):
     # compression: (bool) whether file needs to be decompressed
     try:
         tmp_local_dir = mkdtemp(
-        prefix='tmp_eggo_',
-        dir=eggo_config.get('paths', 'worker_data_dir'))
+            prefix='tmp_eggo_',
+            dir=eggo_config.get('worker_env', 'work_path'))
         
         # 1. dnload file
         dnload_cmd = 'pushd {tmp_local_dir} && curl -L -O {source} && popd'
@@ -165,28 +163,33 @@ def _dnload_to_local_upload_to_dfs(source, destination, compression):
         try:
             # 3. upload to tmp distributed filesystem location (e.g. S3)
             tmp_staged_dir = os.path.join(
-                eggo_config.get('core', 'eggo_base_url'),
-                eggo_config.get('paths', 'dfs_tmp_data_prefix'),
-                eggo_config.get('paths', 'random_id'),
+                eggo_config.get('dfs', 'dfs_tmp_data_url'),
                 'staged',
                 random_id())
-            upload_cmd = ('pushd {tmp_local_dir} && '
-                          '{hadoop_home}/bin/hadoop fs -mkdir -p {tmp_dfs_dir} && '
-                          '{hadoop_home}/bin/hadoop fs -put ./* {tmp_dfs_dir} && '
-                          'popd')
-            p = Popen(upload_cmd.format(tmp_local_dir=tmp_local_dir,
-                                        hadoop_home=eggo_config.get('worker_env',
-                                                                    'hadoop_home'),
-                                        tmp_dfs_dir=tmp_staged_dir),
+            # get the name of the local file that we're uploading
+            local_files = os.listdir(tmp_local_dir)
+            if len(local_files) != 1:
+                # TODO: generate warning/error here
+                pass
+            filename = local_files[0]
+            # ensure the dfs directory exists; this cmd may fail if the dir
+            # already exists, but that's ok (though it shouldn't already exist)
+            create_dir_cmd = '$HADOOP_HOME/bin/hadoop fs -mkdir {tmp_dfs_dir}'
+            p = Popen(create_dir_cmd.format(tmp_dfs_dir=tmp_staged_dir),
+                      shell=True)
+            p.wait()
+            upload_cmd = '$HADOOP_HOME/bin/hadoop fs -put {tmp_local_file} {tmp_dfs_file}'
+            p = Popen(upload_cmd.format(
+                          tmp_local_file=os.path.join(tmp_local_dir, filename),
+                          tmp_dfs_file=os.path.join(tmp_staged_dir, filename)),
                       shell=True)
             p.wait()
 
             # 4. rename to final target location
-            rename_cmd = '{hadoop_home}/bin/hadoop fs -mv {tmp_path} {final_path}'
-            p = Popen(rename_cmd.format(tmp_path=tmp_staged_dir,
-                                        hadoop_home=eggo_config.get('worker_env',
-                                                                    'hadoop_home'),
-                                        final_path=destination),
+            rename_cmd = '$HADOOP_HOME/bin/hadoop fs -mv {tmp_path} {final_path}'
+            p = Popen(rename_cmd.format(
+                          tmp_path=os.path.join(tmp_staged_dir, filename),
+                          final_path=destination),
                       shell=True)
             p.wait()
         except:
@@ -241,14 +244,13 @@ class PrepareHadoopDownloadTask(Task):
     def run(self):
         tmp_dir = mkdtemp(
             prefix='tmp_eggo_',
-            dir=eggo_config.get('paths', 'worker_data_dir'))
+            dir=eggo_config.get('worker_env', 'work_path'))
         try:
             # build the remote command for each source
             tmp_command_file = '{0}/command_file'.format(tmp_dir)
             with open(tmp_command_file, 'w') as command_file:
                 for source in ToastConfig().config['sources']:
-                    command_file.write('{source}\n'.format(
-                        source=json.dumps(source)))
+                    command_file.write('{0}\n'.format(json.dumps(source)))
 
             # 3. Copy command file to Hadoop filesystem
             hdfs_client = HdfsClient()
@@ -272,8 +274,8 @@ class DownloadDatasetHadoopTask(JobTask):
     def job_runner(self):
         addl_conf = {'mapred.map.tasks.speculative.execution': 'false',
                      'mapred.task.timeout': 12000000}
-        # TODO: can we delete this with Director? does it set AWS cred in core-site.xml?
-        streaming_args=['-cmdenv', 'EGGO_CONFIG=' + eggo_config.get('worker_env', 'eggo_config_worker_path'),
+        # TODO: can we delete the AWS vars with Director? does it set AWS cred in core-site.xml?
+        streaming_args=['-cmdenv', 'EGGO_CONFIG=' + eggo_config.get('worker_env', 'eggo_config_path'),
                         '-cmdenv', 'AWS_ACCESS_KEY_ID=' + eggo_config.get('aws', 'aws_access_key_id'),
                         '-cmdenv', 'AWS_SECRET_ACCESS_KEY=' + eggo_config.get('aws', 'aws_secret_access_key')]
         return HadoopJobRunner(streaming_jar=os.environ['STREAMING_JAR'],
@@ -306,8 +308,7 @@ class DownloadDatasetHadoopTask(JobTask):
 class DeleteDatasetTask(Task):
 
     def run(self):
-        delete_raw_cmd = '{hadoop_home}/bin/hadoop fs -rm -r {raw} {target}'.format(
-            hadoop_home=eggo_config.get('worker_env', 'hadoop_home'),
+        delete_raw_cmd = '$HADOOP_HOME/bin/hadoop fs -rm -r {raw} {target}'.format(
             raw=ToastConfig().raw_data_url(),
             target=ToastConfig().dataset_url())
         p = Popen(delete_raw_cmd, shell=True)
@@ -333,17 +334,14 @@ class ADAMBasicTask(Task):
         # 1. Copy the data from source (e.g. S3) to Hadoop's default filesystem
         tmp_hadoop_path = '/tmp/{rand_id}.{format}'.format(rand_id=random_id(),
                                                            format=format)
-        distcp_cmd = '{hadoop_home}/bin/hadoop distcp {source} {target}'.format(
-            hadoop_home=eggo_config.get('worker_env', 'hadoop_home'),
+        distcp_cmd = '$HADOOP_HOME/bin/hadoop distcp {source} {target}'.format(
             source=ToastConfig().raw_data_url(), target=tmp_hadoop_path)
         p = Popen(distcp_cmd, shell=True)
         p.wait()
 
         # 2. Run the adam-submit job
-        adam_cmd = ('{adam_home}/bin/adam-submit --master {spark_master_uri} {adam_command}'
-                    '    {source} {target}').format(
-                        adam_home=os.environ['ADAM_HOME'],
-                        spark_master_uri=os.environ['SPARK_MASTER_URI'],
+        adam_cmd = ('$ADAM_HOME/bin/adam-submit --master $SPARK_MASTER_URI {adam_command} '
+                    '{source} {target}').format(
                         adam_command=self.adam_command, source=tmp_hadoop_path,
                         target=ToastConfig().edition_url(edition=self.edition))
         p = Popen(adam_cmd, shell=True)
@@ -365,10 +363,8 @@ class ADAMFlattenTask(Task):
                              allowed_file_formats=self.allowed_file_formats)
 
     def run(self):
-        adam_cmd = ('{adam_home}/bin/adam-submit --master {spark_master_uri} flatten'
-                    '    {source} {target}').format(
-                        adam_home=os.environ['ADAM_HOME'],
-                        spark_master_uri=os.environ['SPARK_MASTER_URI'],
+        adam_cmd = ('$ADAM_HOME/bin/adam-submit --master $SPARK_MASTER_URI flatten '
+                    '{source} {target}').format(
                         source=ToastConfig().edition_url(
                             edition=self.source_edition),
                         target=ToastConfig().edition_url(edition=self.edition))

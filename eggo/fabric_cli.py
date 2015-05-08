@@ -16,6 +16,7 @@
 
 import os
 import json
+from cStringIO import StringIO
 
 from fabric.api import (
     task, env, execute, local, open_shell, put, cd, run, prefix, shell_env,
@@ -38,24 +39,26 @@ if not env.key_filename:
 def provision():
     provision_cmd = ('{spark_home}/ec2/spark-ec2 -k {ec2_key_pair} '
                      '-i {ec2_private_key_file} -s {slaves} -t {type_} '
-                     '-r {region} --copy-aws-credentials launch bdg-eggo')
+                     '-r {region} --copy-aws-credentials launch {stack_name}')
     interp_cmd = provision_cmd.format(
-        spark_home=eggo_config.get('local_env', 'spark_home'),
+        spark_home=eggo_config.get('client_env', 'spark_home'),
         ec2_key_pair=eggo_config.get('aws', 'ec2_key_pair'),
         ec2_private_key_file=eggo_config.get('aws', 'ec2_private_key_file'),
         slaves=eggo_config.get('spark_ec2', 'num_slaves'),
         type_=eggo_config.get('spark_ec2', 'instance_type'),
-        region=eggo_config.get('spark_ec2', 'region'))
+        region=eggo_config.get('spark_ec2', 'region'),
+        stack_name=eggo_config.get('spark_ec2', 'stack_name'))
     return local(interp_cmd)
 
 
 def get_master_host():
     getmaster_cmd = ('{spark_home}/ec2/spark-ec2 -k {ec2_key_pair} '
-                     '-i {ec2_private_key_file} get-master bdg-eggo')
+                     '-i {ec2_private_key_file} get-master {stack_name}')
     interp_cmd = getmaster_cmd.format(
-        spark_home=eggo_config.get('local_env', 'spark_home'),
+        spark_home=eggo_config.get('client_env', 'spark_home'),
         ec2_key_pair=eggo_config.get('aws', 'ec2_key_pair'),
-        ec2_private_key_file=eggo_config.get('aws', 'ec2_private_key_file'))
+        ec2_private_key_file=eggo_config.get('aws', 'ec2_private_key_file'),
+        stack_name=eggo_config.get('spark_ec2', 'stack_name'))
     result = local(interp_cmd, capture=True)
     host = result.split('\n')[2].strip()
     return host
@@ -63,7 +66,9 @@ def get_master_host():
 
 def get_slave_hosts():
     def do():
-        return run('echo $SLAVES').split()
+        with prefix('source /root/spark-ec2/ec2-variables.sh'):
+            result = run('echo $SLAVES').split()
+        return result
     master = get_master_host()
     return execute(do, hosts=master)[master]
 
@@ -73,15 +78,41 @@ def get_worker_hosts():
 
 
 @task
-def deploy_eggo_config():
-    # copy local eggo config file to remote cluster and set EGGO_CONFIG var
-    eggo_config_worker_path = eggo_config.get('worker_env',
-                                              'eggo_config_worker_path')
+def deploy_config():
+    work_path = eggo_config.get('worker_env', 'work_path')
+    eggo_config_path = eggo_config.get('worker_env', 'eggo_config_path')
+    luigi_config_path = eggo_config.get('worker_env', 'luigi_config_path')
+
     def do():
+        # 0. ensure that the work path exists on the worker nodes
+        run('mkdir -p {work_path}'.format(work_path=work_path))
+
+        # 1. deploy the shell file to be sourced to set up worker env properly for
+        # command execution
+        eggo_local_env_template_path = os.path.join(
+            os.environ['EGGO_HOME'], 'conf',
+            eggo_config.get('execution', 'context'), 'eggo-env.sh.template')
+        with open(eggo_local_env_template_path, 'r') as ip:
+            interp = ip.read().format(work_path=work_path,
+                                      eggo_config_path=eggo_config_path,
+                                      luigi_config_path=luigi_config_path)
+        buf = StringIO(interp)
+        put(local_path=buf,
+            remote_path=eggo_config.get('worker_env', 'eggo_env_path'))
+
+        # 2. copy local eggo config file to remote cluster
         put(local_path=os.environ['EGGO_CONFIG'],
-            remote_path=eggo_config_worker_path)
-        append('~/.bash_profile', 'export EGGO_CONFIG={eggo_config}'.format(
-            eggo_config=eggo_config_worker_path))
+            remote_path=eggo_config_path)
+
+        # 3. deploy the luigi config file
+        local_luigi_config_template_path = os.path.join(
+            os.environ['EGGO_HOME'], 'conf/luigi/luigi.cfg.template')
+        with open(local_luigi_config_template_path, 'r') as ip:
+            interp = ip.read().format(work_path=work_path)
+        buf = StringIO(interp)
+        put(local_path=buf,
+            remote_path=luigi_config_path)
+
     execute(do, hosts=get_worker_hosts())
 
 
@@ -97,6 +128,7 @@ def install_fabric_luigi():
         run('yum install -y protobuf protobuf-devel protobuf-python')
         run('pip install mechanize')
         run('pip install fabric')
+        run('pip install ordereddict')  # for py2.6 compat (for luigi)
         run('pip install luigi')
 
 
@@ -144,77 +176,39 @@ def install_eggo(path, fork, branch):
             run('python setup.py install')
 
 
-def install_env(files_to_source, hadoop_home, spark_home, streaming_jar,
-                spark_master_uri, worker_data_dir):
-    env_lines = []
-    for file_ in files_to_source.split(','):
-        env_lines.append('source {file}'.format(file=file_))
-    env_lines.append('export HADOOP_HOME={hadoop_home}'.format(
-        hadoop_home=hadoop_home))
-    env_lines.append('export SPARK_HOME={spark_home}'.format(
-        spark_home=spark_home))
-    env_lines.append('export STREAMING_JAR={streaming_jar}'.format(
-        streaming_jar=streaming_jar))
-    env_lines.append('export SPARK_MASTER_URI={spark_master_uri}'.format(
-        spark_master_uri=spark_master_uri))
-    env_lines.append('export ADAM_HOME={adam_home}'.format(
-        adam_home=os.path.join(worker_data_dir, 'adam')))
-    env_lines.append('export EGGO_HOME={eggo_home}'.format(
-        eggo_home=os.path.join(worker_data_dir, 'eggo')))
-    env_lines.append(
-        'export LUIGI_CONFIG_PATH={worker_data_dir}/luigi.cfg'.format(
-            worker_data_dir=worker_data_dir))
-    append('~/.bash_profile', env_lines)
-
-
-def write_luigi_config():
-    lines = []
-    lines.append('[core]')
-    lines.append(
-        'logging_conf_file: {eggo_home}/conf/luigi/luigi_logging.cfg'.format(
-            eggo_home=os.path.join(
-                eggo_config.get('paths', 'worker_data_dir'), 'eggo')))
-    lines.append('[hadoop]')
-    lines.append('command: {hadoop_home}/bin/hadoop'.format(
-        hadoop_home=eggo_config.get('worker_env', 'hadoop_home')))
-    append('{worker_data_dir}/luigi.cfg'.format(
-               worker_data_dir=eggo_config.get('paths', 'worker_data_dir')),
-           lines)
-
-
 @task
 def setup_master():
+    work_path = eggo_config.get('worker_env', 'work_path')
+    adam_fork = eggo_config.get('versions', 'adam_fork')
+    adam_branch = eggo_config.get('versions', 'adam_branch')
+    eggo_fork = eggo_config.get('versions', 'eggo_fork')
+    eggo_branch = eggo_config.get('versions', 'eggo_branch')
+
     def do():
+        run('mkdir -p {work_path}'.format(work_path=work_path))
         install_pip()
         install_fabric_luigi()
         install_maven(eggo_config.get('versions', 'maven'))
-        install_adam(eggo_config.get('paths', 'worker_data_dir'),
-                     eggo_config.get('versions', 'adam_fork'),
-                     eggo_config.get('versions', 'adam_branch'))
-        install_eggo(eggo_config.get('paths', 'worker_data_dir'),
-                     eggo_config.get('versions', 'eggo_fork'),
-                     eggo_config.get('versions', 'eggo_branch'))
-        write_luigi_config()
-        install_env(files_to_source=eggo_config.get('worker_env', 'files_to_source'),
-                    hadoop_home=eggo_config.get('worker_env', 'hadoop_home'),
-                    spark_home=eggo_config.get('worker_env', 'spark_home'),
-                    streaming_jar=eggo_config.get('worker_env', 'streaming_jar'),
-                    spark_master_uri=eggo_config.get('worker_env', 'spark_master_uri'),
-                    worker_data_dir=eggo_config.get('paths', 'worker_data_dir'))
+        install_adam(work_path, adam_fork, adam_branch)
+        install_eggo(work_path, eggo_fork, eggo_branch)
         # restart Hadoop
         run('/root/ephemeral-hdfs/bin/stop-all.sh')
         run('/root/ephemeral-hdfs/bin/start-all.sh')
+
     execute(do, hosts=get_master_host())
 
 
 @task
 def setup_slaves():
+    work_path = eggo_config.get('worker_env', 'work_path')
+    eggo_fork = eggo_config.get('versions', 'eggo_fork')
+    eggo_branch = eggo_config.get('versions', 'eggo_branch')
+
     def do():
         env.parallel = True
         install_pip()
-        install_eggo(eggo_config.get('paths', 'worker_data_dir'),
-                     eggo_config.get('versions', 'eggo_fork'),
-                     eggo_config.get('versions', 'eggo_branch'))
+        install_eggo(work_path, eggo_fork, eggo_branch)
+
     execute(do, hosts=get_slave_hosts())
 
 
@@ -226,24 +220,29 @@ def login():
 @task
 def teardown():
     teardown_cmd = ('{spark_home}/ec2/spark-ec2 -k {ec2_key_pair} '
-                    '-i {ec2_private_key_file} destroy bdg-eggo')
+                    '-i {ec2_private_key_file} destroy {stack_name}')
     interp_cmd = teardown_cmd.format(
-        spark_home=eggo_config.get('local_env', 'spark_home'),
+        spark_home=eggo_config.get('client_env', 'spark_home'),
         ec2_key_pair=eggo_config.get('aws', 'ec2_key_pair'),
-        ec2_private_key_file=eggo_config.get('aws', 'ec2_private_key_file'))
+        ec2_private_key_file=eggo_config.get('aws', 'ec2_private_key_file'),
+        stack_name=eggo_config.get('spark_ec2', 'stack_name'))
     local(interp_cmd)
 
 
 @task
 def toast(config):
+    eggo_env_path = eggo_config.get('worker_env', 'eggo_env_path')
+
     def do():
         with open(config, 'r') as ip:
             config_data = json.load(ip)
         dag_class = config_data['dag']
-        run('test -n "$EGGO_HOME"')  # ensure proper env installed
+        # ensure proper env installed
+        with prefix('source {env}'.format(env=eggo_env_path)):
+            run('test -n "$EGGO_HOME"')
         # push the toast config to the remote machine
         toast_config_worker_path = os.path.join(
-            eggo_config.get('paths', 'worker_data_dir'),
+            eggo_config.get('worker_env', 'work_path'),
             build_dest_filename(config))
         put(local_path=config,
             remote_path=toast_config_worker_path)
@@ -252,18 +251,25 @@ def toast(config):
                      '--ToastConfig-config {toast_config}'.format(
                         clazz=dag_class,
                         toast_config=toast_config_worker_path))
-        run(toast_cmd)
+        with prefix('source {env}'.format(env=eggo_env_path)):
+            run(toast_cmd)
+    
     execute(do, hosts=get_master_host())
 
 
 @task
 def update_eggo():
+    eggo_env_path = eggo_config.get('worker_env', 'eggo_env_path')
+    work_path = eggo_config.get('worker_env', 'work_path')
+    eggo_fork = eggo_config.get('versions', 'eggo_fork')
+    eggo_branch = eggo_config.get('versions', 'eggo_branch')
+
     def do():
         env.parallel = True
-        run('rm -rf $EGGO_HOME')
-        install_eggo(eggo_config.get('paths', 'worker_data_dir'),
-                     eggo_config.get('versions', 'eggo_fork'),
-                     eggo_config.get('versions', 'eggo_branch'))
+        with prefix('source {env}'.format(env=eggo_env_path)):
+            run('rm -rf $EGGO_HOME')
+            install_eggo(work_path, eggo_fork, eggo_branch)
+
     execute(do, hosts=[get_master_host()] + get_slave_hosts())
 
 

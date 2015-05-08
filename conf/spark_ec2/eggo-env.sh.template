@@ -15,24 +15,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: weaken the requirements of setting these variables.  If eggo is pip-
-# installed in the future, then EGGO_HOME can default to the site-packages
-# install location.  If it's just an "end-user" looking to browse available
-# data sets etc., there may not be need for the user to have EGGO_CONF set
+source /root/spark-ec2/ec2-variables.sh
 
-# required to get a pointer to the config/env templates
-if [ -z "$EGGO_HOME" ]; then
-	echo >&2 "EGGO_HOME is unset. Aborting."
-	exit 1
-fi
+export HADOOP_HOME=/root/ephemeral-hdfs
+export STREAMING_JAR=$HADOOP_HOME/contrib/streaming/hadoop-streaming-1.0.4.jar
+export SPARK_HOME=/root/spark
+export SPARK_MASTER_URI=spark://$MASTERS:7077
+export ADAM_HOME={work_path}/adam
+export EGGO_HOME={work_path}/eggo
+export EGGO_CONFIG={eggo_config_path}
+export LUIGI_CONFIG_PATH={luigi_config_path}
 
-# required as the global config for the eggo instance
-if [ -z "$EGGO_CONFIG" ]; then
-	echo >&2 "EGGO_CONFIG is unset. Aborting."
-	exit 1
-fi
-
-# Check if fabric is installed
-command -v fab >/dev/null 2>&1 || { echo >&2 "fab not found on PATH. Aborting."; exit 1; }
-
-fab -f "$EGGO_HOME/eggo/fabric_cli.py" "$@"
+# mainly to ensure that Luigi can find the hadoop executable bc Luigi uses
+# Popen(shell=False), so specifying $HADOOP_HOME there would not get
+# substituted properly
+export PATH=$HADOOP_HOME/bin:$PATH
