@@ -18,6 +18,7 @@ import os
 from ConfigParser import SafeConfigParser
 
 from eggo.util import random_id
+from eggo.error import ConfigError
 
 
 # EGGO CONFIGURATION
@@ -32,11 +33,11 @@ def _init_eggo_config():
         eggo_config.readfp(ip, os.environ['EGGO_CONFIG'])
 
     # Generate the random identifier for this module load
-    eggo_config.set('paths', 'random_id', random_id())
+    eggo_config.set('execution', 'random_id', random_id())
 
     # Set local SPARK_HOME from environment if available
     if 'SPARK_HOME' in os.environ:
-        eggo_config.set('local_env',
+        eggo_config.set('client_env',
                         'spark_home',
                         os.environ['SPARK_HOME'])
 
@@ -61,7 +62,15 @@ def _init_eggo_config():
     return eggo_config
 
 
-eggo_config = _init_eggo_config()
+def validate_eggo_config(c):
+    if (c.get('dfs', 'dfs_root_url').startswith('file:') and
+            c.get('execution', 'context') != 'local'):
+        raise ConfigError('Using local fs as target is only supported with '
+                          'local execution')
+    return c
+
+
+eggo_config = validate_eggo_config(_init_eggo_config())
 
 
 # TOAST CONFIGURATION

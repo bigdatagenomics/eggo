@@ -188,3 +188,38 @@ You can delete the test datasets with
 bin/toaster.py --local-scheduler DeleteDatasetTask --ToastConfig-config test/registry/test-genotypes.json
 bin/toaster.py --local-scheduler DeleteDatasetTask --ToastConfig-config test/registry/test-alignments.json
 ```
+
+
+## NEW config-file-based organization
+
+Concepts:
+
+* dfs: the target "distributed" filesystem that will contain the final ETL'd data
+
+* workers: the machines on which ETL is executed
+
+* worker_env: an environment which we assume available on the worker machines, including env variables and paths to write data
+
+* client: the local machine from which we issue the CLI commands
+
+* client_env: the environment assumed on the local machine
+
+The only environment variable that MUST be set on the local client machine is
+EGGO_CONFIG.  This config file will be deployed across all relevant worker
+machines.
+
+Other local client env vars that will be respected include: SPARK_HOME,
+AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, EC2_KEY_PAIR, EC2_PRIVATE_KEY_FILE.
+Everything else is derived from the EGGO_CONFIG file.
+
+One of the workers is designated a master, which is where the computations are
+executed.  This node needs additional configuration.
+
+```
+eggo provision
+eggo deploy_config
+eggo setup_master
+eggo setup_slaves
+eggo toast:config=$EGGO_HOME/test/registry/test-genotypes.json
+eggo teardown
+```

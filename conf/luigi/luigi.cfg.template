@@ -1,0 +1,5 @@
+[core]
+logging_conf_file:{work_path}/eggo/conf/luigi/luigi_logging.cfg
+
+[hadoop]
+command: hadoop
