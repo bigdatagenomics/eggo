@@ -20,12 +20,12 @@ from cStringIO import StringIO
 
 from fabric.api import (
     task, env, execute, local, open_shell, put, cd, run, prefix, shell_env,
-    require, hosts)
+    require, hosts, path)
 from fabric.contrib.files import append
 
 import eggo.director
 from eggo.util import build_dest_filename
-from eggo.config import eggo_config
+from eggo.config import eggo_config, generate_luigi_cfg
 
 
 # user that fabric connects as
@@ -87,29 +87,12 @@ def deploy_config():
         # 0. ensure that the work path exists on the worker nodes
         run('mkdir -p {work_path}'.format(work_path=work_path))
 
-        # 1. deploy the shell file to be sourced to set up worker env properly for
-        # command execution
-        eggo_local_env_template_path = os.path.join(
-            os.environ['EGGO_HOME'], 'conf',
-            eggo_config.get('execution', 'context'), 'eggo-env.sh.template')
-        with open(eggo_local_env_template_path, 'r') as ip:
-            interp = ip.read().format(work_path=work_path,
-                                      eggo_config_path=eggo_config_path,
-                                      luigi_config_path=luigi_config_path)
-        buf = StringIO(interp)
-        put(local_path=buf,
-            remote_path=eggo_config.get('worker_env', 'eggo_env_path'))
-
-        # 2. copy local eggo config file to remote cluster
+        # 1. copy local eggo config file to remote cluster
         put(local_path=os.environ['EGGO_CONFIG'],
             remote_path=eggo_config_path)
 
-        # 3. deploy the luigi config file
-        local_luigi_config_template_path = os.path.join(
-            os.environ['EGGO_HOME'], 'conf/luigi/luigi.cfg.template')
-        with open(local_luigi_config_template_path, 'r') as ip:
-            interp = ip.read().format(work_path=work_path)
-        buf = StringIO(interp)
+        # 2. deploy the luigi config file
+        buf = StringIO(generate_luigi_cfg())
         put(local_path=buf,
             remote_path=luigi_config_path)
 
@@ -231,15 +214,10 @@ def teardown():
 
 @task
 def toast(config):
-    eggo_env_path = eggo_config.get('worker_env', 'eggo_env_path')
-
     def do():
         with open(config, 'r') as ip:
             config_data = json.load(ip)
         dag_class = config_data['dag']
-        # ensure proper env installed
-        with prefix('source {env}'.format(env=eggo_env_path)):
-            run('test -n "$EGGO_HOME"')
         # push the toast config to the remote machine
         toast_config_worker_path = os.path.join(
             eggo_config.get('worker_env', 'work_path'),
@@ -251,24 +229,30 @@ def toast(config):
                      '--ToastConfig-config {toast_config}'.format(
                         clazz=dag_class,
                         toast_config=toast_config_worker_path))
-        with prefix('source {env}'.format(env=eggo_env_path)):
-            run(toast_cmd)
+        
+        hadoop_bin = os.path.join(eggo_config.get('worker_env', 'hadoop_home'), 'bin')
+        toast_env = {'EGGO_CONFIG': eggo_config.get('worker_env', 'eggo_config_path'),  # bc toaster.py imports eggo_config which must be init on the worker
+                     'LUIGI_CONFIG_PATH': eggo_config.get('worker_env', 'luigi_config_path'),
+                     'AWS_ACCESS_KEY_ID': eggo_config.get('aws', 'aws_access_key_id'),  # bc dataset dnload pushes data to S3 TODO: should only be added if the dfs is S3
+                     'AWS_SECRET_ACCESS_KEY': eggo_config.get('aws', 'aws_secret_access_key'),  # TODO: should only be added if the dfs is S3
+                     'SPARK_HOME': eggo_config.get('worker_env', 'spark_home')}
+        with path(hadoop_bin):
+            with shell_env(**toast_env):
+                run(toast_cmd)
     
     execute(do, hosts=get_master_host())
 
 
 @task
 def update_eggo():
-    eggo_env_path = eggo_config.get('worker_env', 'eggo_env_path')
     work_path = eggo_config.get('worker_env', 'work_path')
     eggo_fork = eggo_config.get('versions', 'eggo_fork')
     eggo_branch = eggo_config.get('versions', 'eggo_branch')
 
     def do():
         env.parallel = True
-        with prefix('source {env}'.format(env=eggo_env_path)):
-            run('rm -rf $EGGO_HOME')
-            install_eggo(work_path, eggo_fork, eggo_branch)
+        run('rm -rf $EGGO_HOME')
+        install_eggo(work_path, eggo_fork, eggo_branch)
 
     execute(do, hosts=[get_master_host()] + get_slave_hosts())
 
