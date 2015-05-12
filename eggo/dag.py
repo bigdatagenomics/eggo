@@ -174,20 +174,24 @@ def _dnload_to_local_upload_to_dfs(source, destination, compression):
             filename = local_files[0]
             # ensure the dfs directory exists; this cmd may fail if the dir
             # already exists, but that's ok (though it shouldn't already exist)
-            create_dir_cmd = '$HADOOP_HOME/bin/hadoop fs -mkdir {tmp_dfs_dir}'
-            p = Popen(create_dir_cmd.format(tmp_dfs_dir=tmp_staged_dir),
+            create_dir_cmd = '{hadoop_home}/bin/hadoop fs -mkdir {tmp_dfs_dir}'
+            p = Popen(create_dir_cmd.format(
+                          hadoop_home=eggo_config.get('worker_env', 'hadoop_home'),
+                          tmp_dfs_dir=tmp_staged_dir),
                       shell=True)
             p.wait()
-            upload_cmd = '$HADOOP_HOME/bin/hadoop fs -put {tmp_local_file} {tmp_dfs_file}'
+            upload_cmd = '{hadoop_home}/bin/hadoop fs -put {tmp_local_file} {tmp_dfs_file}'
             p = Popen(upload_cmd.format(
+                          hadoop_home=eggo_config.get('worker_env', 'hadoop_home'),
                           tmp_local_file=os.path.join(tmp_local_dir, filename),
                           tmp_dfs_file=os.path.join(tmp_staged_dir, filename)),
                       shell=True)
             p.wait()
 
             # 4. rename to final target location
-            rename_cmd = '$HADOOP_HOME/bin/hadoop fs -mv {tmp_path} {final_path}'
+            rename_cmd = '{hadoop_home}/bin/hadoop fs -mv {tmp_path} {final_path}'
             p = Popen(rename_cmd.format(
+                          hadoop_home=eggo_config.get('worker_env', 'hadoop_home'),
                           tmp_path=os.path.join(tmp_staged_dir, filename),
                           final_path=destination),
                       shell=True)
@@ -278,7 +282,7 @@ class DownloadDatasetHadoopTask(JobTask):
         streaming_args=['-cmdenv', 'EGGO_CONFIG=' + eggo_config.get('worker_env', 'eggo_config_path'),
                         '-cmdenv', 'AWS_ACCESS_KEY_ID=' + eggo_config.get('aws', 'aws_access_key_id'),
                         '-cmdenv', 'AWS_SECRET_ACCESS_KEY=' + eggo_config.get('aws', 'aws_secret_access_key')]
-        return HadoopJobRunner(streaming_jar=os.environ['STREAMING_JAR'],
+        return HadoopJobRunner(streaming_jar=eggo_config.get('worker_env', 'streaming_jar'),
                                streaming_args=streaming_args,
                                jobconfs=addl_conf,
                                input_format='org.apache.hadoop.mapred.lib.NLineInputFormat',
@@ -308,7 +312,8 @@ class DownloadDatasetHadoopTask(JobTask):
 class DeleteDatasetTask(Task):
 
     def run(self):
-        delete_raw_cmd = '$HADOOP_HOME/bin/hadoop fs -rm -r {raw} {target}'.format(
+        delete_raw_cmd = '{hadoop_home}/bin/hadoop fs -rm -r {raw} {target}'.format(
+            hadoop_home=eggo_config.get('worker_env', 'hadoop_home'),
             raw=ToastConfig().raw_data_url(),
             target=ToastConfig().dataset_url())
         p = Popen(delete_raw_cmd, shell=True)
@@ -334,14 +339,17 @@ class ADAMBasicTask(Task):
         # 1. Copy the data from source (e.g. S3) to Hadoop's default filesystem
         tmp_hadoop_path = '/tmp/{rand_id}.{format}'.format(rand_id=random_id(),
                                                            format=format)
-        distcp_cmd = '$HADOOP_HOME/bin/hadoop distcp {source} {target}'.format(
+        distcp_cmd = '{hadoop_home}/bin/hadoop distcp {source} {target}'.format(
+            hadoop_home=eggo_config.get('worker_env', 'hadoop_home'),
             source=ToastConfig().raw_data_url(), target=tmp_hadoop_path)
         p = Popen(distcp_cmd, shell=True)
         p.wait()
 
         # 2. Run the adam-submit job
-        adam_cmd = ('$ADAM_HOME/bin/adam-submit --master $SPARK_MASTER_URI {adam_command} '
+        adam_cmd = ('{adam_home}/bin/adam-submit --master {spark_master} {adam_command} '
                     '{source} {target}').format(
+                        adam_home=eggo_config.get('worker_env', 'adam_home'),
+                        spark_master=eggo_config.get('worker_env', 'spark_master'),
                         adam_command=self.adam_command, source=tmp_hadoop_path,
                         target=ToastConfig().edition_url(edition=self.edition))
         p = Popen(adam_cmd, shell=True)
@@ -363,8 +371,10 @@ class ADAMFlattenTask(Task):
                              allowed_file_formats=self.allowed_file_formats)
 
     def run(self):
-        adam_cmd = ('$ADAM_HOME/bin/adam-submit --master $SPARK_MASTER_URI flatten '
+        adam_cmd = ('{adam_home}/bin/adam-submit --master {spark_master} flatten '
                     '{source} {target}').format(
+                        adam_home=eggo_config.get('worker_env', 'adam_home'),
+                        spark_master=eggo_config.get('worker_env', 'spark_master'),
                         source=ToastConfig().edition_url(
                             edition=self.source_edition),
                         target=ToastConfig().edition_url(edition=self.edition))

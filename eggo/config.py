@@ -35,7 +35,7 @@ def _init_eggo_config():
     # Generate the random identifier for this module load
     eggo_config.set('execution', 'random_id', random_id())
 
-    # Set local SPARK_HOME from environment if available
+    # Set local (client) SPARK_HOME from environment if available
     if 'SPARK_HOME' in os.environ:
         eggo_config.set('client_env',
                         'spark_home',
@@ -71,6 +71,14 @@ def validate_eggo_config(c):
 
 
 eggo_config = validate_eggo_config(_init_eggo_config())
+
+
+def generate_luigi_cfg():
+    cfg = ('[core]\n'
+           'logging_conf_file:{work_path}/eggo/conf/luigi/luigi_logging.cfg\n'
+           '[hadoop]\n'
+           'command: hadoop\n')
+    return cfg.format(work_path=eggo_config.get('worker_env', 'work_path'))
 
 
 # TOAST CONFIGURATION
