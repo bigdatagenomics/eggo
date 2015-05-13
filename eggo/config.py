@@ -73,6 +73,9 @@ def validate_eggo_config(c):
 eggo_config = validate_eggo_config(_init_eggo_config())
 
 
+supported_formats = ['bdg']  # # TODO: support ga4gh
+
+
 def generate_luigi_cfg():
     cfg = ('[core]\n'
            'logging_conf_file:{work_path}/eggo/conf/luigi/luigi_logging.cfg\n'
