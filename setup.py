@@ -33,7 +33,7 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     scripts=['bin/eggo', 'bin/toaster.py'],
-    install_requires=['fabric', 'luigi'],
+    install_requires=['fabric', 'luigi', 'boto'],
     keywords=('bdg adam spark eggo genomics omics public data'),
     license='Apache License, Version 2.0',
     classifiers=[
