@@ -39,7 +39,10 @@ if not env.key_filename:
 def provision():
     provision_cmd = ('{spark_home}/ec2/spark-ec2 -k {ec2_key_pair} '
                      '-i {ec2_private_key_file} -s {slaves} -t {type_} '
-                     '-r {region} --copy-aws-credentials launch {stack_name}')
+                     '-r {region} {zone_arg} '
+                     '--copy-aws-credentials launch {stack_name}')
+    az = eggo_config.get('spark_ec2', 'availability_zone')
+    zone_arg = '--zone {0}'.format(az) if az != '' else ''
     interp_cmd = provision_cmd.format(
         spark_home=eggo_config.get('client_env', 'spark_home'),
         ec2_key_pair=eggo_config.get('aws', 'ec2_key_pair'),
@@ -47,9 +50,10 @@ def provision():
         slaves=eggo_config.get('spark_ec2', 'num_slaves'),
         type_=eggo_config.get('spark_ec2', 'instance_type'),
         region=eggo_config.get('spark_ec2', 'region'),
+        zone_arg=zone_arg,
         stack_name=eggo_config.get('spark_ec2', 'stack_name'))
     local(interp_cmd)
-    
+
     # tag all the provisioned instances
     from boto.ec2 import connect_to_region
     exec_ctx = eggo_config.get('execution', 'context')
@@ -151,7 +155,7 @@ def install_adam(path, fork, branch):
             elif branch != 'master':
                 run('git checkout origin/{branch}'.format(branch=branch))
             # build adam
-            with shell_env(MAVEN_OPTS='-Xmx512m -XX:MaxPermSize=128m'):
+            with shell_env(MAVEN_OPTS='-Xmx1024m -XX:MaxPermSize=512m'):
                 run('mvn clean package -DskipTests')
 
 
