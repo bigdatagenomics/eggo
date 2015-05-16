@@ -55,7 +55,6 @@ docs/_build/
 target/
 
 scratch.py
-tag-my-instances.py
 
 # emacs
 *~
