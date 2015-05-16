@@ -155,7 +155,7 @@ def install_adam(path, fork, branch):
             elif branch != 'master':
                 run('git checkout origin/{branch}'.format(branch=branch))
             # build adam
-            with shell_env(MAVEN_OPTS='-Xmx512m -XX:MaxPermSize=128m'):
+            with shell_env(MAVEN_OPTS='-Xmx1024m -XX:MaxPermSize=512m'):
                 run('mvn clean package -DskipTests')
 
 
