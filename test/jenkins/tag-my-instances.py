@@ -15,7 +15,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
+"""Adds "owner" tags to instances with tag:stack_name matching eggo config
+
+Used in jenkins jobs for provisioning instances under Cloudera acct, which must
+be tagged with an order lest they be destroyed.
+"""
+
+from getpass import getuser
 
 from boto.ec2 import connect_to_region
 
@@ -23,12 +29,10 @@ from eggo.config import eggo_config
 
 
 exec_ctx = eggo_config.get('execution', 'context')
-# check that we're running on EC2
-if exec_ctx not in ['spark_ec2', 'director']:
-    sys.exit()
 conn = connect_to_region(eggo_config.get(exec_ctx, 'region'))
+user = getuser()
 instances = conn.get_only_instances(
     filters={'tag:stack_name': [eggo_config.get(exec_ctx, 'stack_name')]})
 for instance in instances:
     print instance
-    instance.terminate()
+    instance.add_tag('owner', user)
