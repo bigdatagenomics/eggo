@@ -15,4 +15,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: impl this
+import sys
+
+from boto.ec2 import connect_to_region
+
+from eggo.config import eggo_config
+
+
+exec_ctx = eggo_config.get('execution', 'context')
+# check that we're running on EC2
+if exec_ctx not in ['spark_ec2', 'director']:
+    sys.exit()
+conn = connect_to_region(eggo_config.get(exec_ctx, 'region'))
+instances = conn.get_only_instances(
+    filters={'tag:stack_name': [eggo_config.get(exec_ctx, 'stack_name')]})
+for instance in instances:
+    print instance
+    instance.terminate()
