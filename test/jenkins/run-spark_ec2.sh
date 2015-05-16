@@ -50,7 +50,7 @@ curl $HADOOP_TARBALL_URL | tar xzf -
 export HADOOP_HOME=$EGGO_HOME/$(basename $HADOOP_TARBALL_URL .tar.gz)
 export HADOOP_CLASSPATH=$HADOOP_CLASSPATH:$HADOOP_HOME/share/hadoop/tools/lib/*  # hadoop-aws.jar: http://stackoverflow.com/questions/28029134
 export PATH=$HADOOP_HOME/bin:$PATH  # bc python tests use Luigi hadoop CLI wrapper
-test/jenkins/add_aws_to_hadoop_conf.py  # modifies 
+test/jenkins/add-aws-to-hadoop-conf.py  # modifies 
 
 
 # 4. ETL the test data sets

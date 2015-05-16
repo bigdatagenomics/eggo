@@ -15,6 +15,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Add necessary S3N properties to Hadoop config for client to work with S3.
+
+Requires these environment variables to be set:
+    HADOOP_HOME
+    AWS_ACCESS_KEY_ID
+    AWS_SECRET_ACCESS_KEY
+"""
+
 import os
 from xml.etree.ElementTree import parse, fromstring
 
