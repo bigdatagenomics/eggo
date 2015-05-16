@@ -48,7 +48,16 @@ def provision():
         type_=eggo_config.get('spark_ec2', 'instance_type'),
         region=eggo_config.get('spark_ec2', 'region'),
         stack_name=eggo_config.get('spark_ec2', 'stack_name'))
-    return local(interp_cmd)
+    local(interp_cmd)
+    
+    # tag all the provisioned instances
+    from boto.ec2 import connect_to_region
+    exec_ctx = eggo_config.get('execution', 'context')
+    conn = connect_to_region(eggo_config.get(exec_ctx, 'region'))
+    instances = conn.get_only_instances(
+        filters={'key-name': [eggo_config.get('aws', 'ec2_key_pair')]})
+    for instance in instances:
+        instance.add_tag('stack_name', eggo_config.get(exec_ctx, 'stack_name'))
 
 
 def get_master_host():
