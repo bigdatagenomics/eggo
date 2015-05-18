@@ -53,7 +53,11 @@ export PATH=$HADOOP_HOME/bin:$PATH  # bc python tests use Luigi hadoop CLI wrapp
 test/jenkins/add-aws-to-hadoop-conf.py  # modifies 
 
 
-# 4. ETL the test data sets
+# 4. Remove data from a possible previous run of this script
+eggo delete_all:config=$EGGO_HOME/test/registry/test-genotypes.json
+
+
+# 5. ETL the test data sets
 eggo provision
 test/jenkins/tag-my-instances.py
 eggo deploy_config
@@ -64,11 +68,11 @@ eggo toast:config=$EGGO_HOME/test/registry/test-genotypes.json
 echo y | eggo teardown  # eggo teardown asks for confirmation
 
 
-# 5. Test result correctness
+# 6. Test result correctness
 py.test $EGGO_HOME/test/jenkins/test_results.py
 
 # TODO: eventually, load data into CDH cluster and test queries with Impala
 
 
-# 6. Cleanup
+# 7. Cleanup
 deactivate

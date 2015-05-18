@@ -16,12 +16,15 @@
 
 import os
 import json
+from urlparse import urlparse
 from cStringIO import StringIO
 
 from fabric.api import (
     task, env, execute, local, open_shell, put, cd, run, prefix, shell_env,
     require, hosts, path)
 from fabric.contrib.files import append
+from boto.ec2 import connect_to_region
+from boto.s3.connection import S3Connection
 
 import eggo.director
 from eggo.util import build_dest_filename
@@ -55,7 +58,6 @@ def provision():
     local(interp_cmd)
 
     # tag all the provisioned instances
-    from boto.ec2 import connect_to_region
     exec_ctx = eggo_config.get('execution', 'context')
     conn = connect_to_region(eggo_config.get(exec_ctx, 'region'))
     instances = conn.get_only_instances(
@@ -254,6 +256,64 @@ def toast(config):
                 run(toast_cmd)
     
     execute(do, hosts=get_master_host())
+
+
+@task
+def delete_raw(config):
+    with open(config, 'r') as ip:
+        config_data = json.load(ip)
+    url = os.path.join(eggo_config.get('dfs', 'dfs_raw_data_url'),
+                       config_data['name'])
+    url = urlparse(url)
+    if url.scheme == 's3n':
+        conn = S3Connection()
+        bucket = conn.get_bucket(url.netloc)
+        keys = bucket.list(url.path.lstrip('/'))
+        bucket.delete_keys(keys)
+    else:
+        raise NotImplementedError(
+            "{0} dfs scheme not supported".format(url.scheme))
+
+
+@task
+def delete_tmp(config):
+    with open(config, 'r') as ip:
+        config_data = json.load(ip)
+    url = os.path.join(eggo_config.get('dfs', 'dfs_tmp_data_url'),
+                       config_data['name'])
+    url = urlparse(url)
+    if url.scheme == 's3n':
+        conn = S3Connection()
+        bucket = conn.get_bucket(url.netloc)
+        keys = bucket.list(url.path.lstrip('/'))
+        bucket.delete_keys(keys)
+    else:
+        raise NotImplementedError(
+            "{0} dfs scheme not supported".format(url.scheme))
+
+
+@task
+def delete_toasted(config):
+    with open(config, 'r') as ip:
+        config_data = json.load(ip)
+    url = os.path.join(eggo_config.get('dfs', 'dfs_root_url'),
+                       config_data['name'])
+    url = urlparse(url)
+    if url.scheme == 's3n':
+        conn = S3Connection()
+        bucket = conn.get_bucket(url.netloc)
+        keys = bucket.list(url.path.lstrip('/'))
+        bucket.delete_keys(keys)
+    else:
+        raise NotImplementedError(
+            "{0} dfs scheme not supported".format(url.scheme))
+
+
+@task
+def delete_all(config):
+    delete_tmp(config)
+    delete_raw(config)
+    delete_toasted(config)
 
 
 @task
