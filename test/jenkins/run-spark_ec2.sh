@@ -55,7 +55,7 @@ test/jenkins/add-aws-to-hadoop-conf.py  # modifies
 
 # 4. ETL the test data sets
 eggo provision
-test/jenkins/tag-my-instances.py  # to avoid Cloudera killing our instances
+test/jenkins/tag-my-instances.py
 eggo deploy_config
 eggo setup_master
 eggo setup_slaves

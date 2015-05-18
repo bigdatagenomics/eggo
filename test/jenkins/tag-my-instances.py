@@ -15,11 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Adds "owner" tags to instances with tag:stack_name matching eggo config
-
-Used in jenkins jobs for provisioning instances under Cloudera acct, which must
-be tagged with an order lest they be destroyed.
-"""
+"""Adds "owner" tags to instances with tag:stack_name matching eggo config."""
 
 from getpass import getuser
 
