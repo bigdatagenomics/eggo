@@ -246,7 +246,8 @@ def toast(config):
                         toast_config=toast_config_worker_path))
         
         hadoop_bin = os.path.join(eggo_config.get('worker_env', 'hadoop_home'), 'bin')
-        toast_env = {'EGGO_CONFIG': eggo_config.get('worker_env', 'eggo_config_path'),  # bc toaster.py imports eggo_config which must be init on the worker
+        toast_env = {'EGGO_HOME': eggo_config.get('worker_env', 'eggo_home'),  # toaster.py imports eggo_config, which needs EGGO_HOME on worker
+                     'EGGO_CONFIG': eggo_config.get('worker_env', 'eggo_config_path'),  # bc toaster.py imports eggo_config which must be init on the worker
                      'LUIGI_CONFIG_PATH': eggo_config.get('worker_env', 'luigi_config_path'),
                      'AWS_ACCESS_KEY_ID': eggo_config.get('aws', 'aws_access_key_id'),  # bc dataset dnload pushes data to S3 TODO: should only be added if the dfs is S3
                      'AWS_SECRET_ACCESS_KEY': eggo_config.get('aws', 'aws_secret_access_key'),  # TODO: should only be added if the dfs is S3
