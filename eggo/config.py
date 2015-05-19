@@ -62,16 +62,39 @@ def _init_eggo_config():
     return eggo_config
 
 
+def assert_eggo_config_complete(c):
+    # read the "master" config file
+    ref = SafeConfigParser(dict_type=dict)
+    ref_config_file = os.path.join(os.environ['EGGO_HOME'],
+                                   'conf/eggo/eggo.cfg')
+    with open(ref_config_file, 'r') as ip:
+        ref.readfp(ip, ref_config_file)
+
+    def assert_section_complete(section):
+        if not set(ref.options(section)) <= set(c.options(section)):
+            raise ConfigError('Config pointed to by EGGO_CONFIG missing '
+                              'options in section {0}'.format(section))
+
+    assert_section_complete('dfs')
+    assert_section_complete('execution')
+    assert_section_complete('versions')
+    assert_section_complete('client_env')
+    assert_section_complete('worker_env')
+    exec_ctx = c.get('execution', 'context')
+    assert_section_complete(exec_ctx)
+
+
 def validate_eggo_config(c):
     if (c.get('dfs', 'dfs_root_url').startswith('file:') and
             c.get('execution', 'context') != 'local'):
         raise ConfigError('Using local fs as target is only supported with '
                           'local execution')
-    return c
 
 
-eggo_config = validate_eggo_config(_init_eggo_config())
-
+eggo_config = _init_eggo_config()
+# raise a ConfigError if there is a problem:
+assert_eggo_config_complete(eggo_config)
+validate_eggo_config(eggo_config)
 
 supported_formats = ['bdg']  # # TODO: support ga4gh
 
