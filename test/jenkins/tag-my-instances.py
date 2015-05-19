@@ -17,6 +17,7 @@
 
 """Adds "owner" tags to instances with tag:stack_name matching eggo config."""
 
+import sys
 from getpass import getuser
 
 from boto.ec2 import connect_to_region
@@ -25,6 +26,8 @@ from eggo.config import eggo_config
 
 
 exec_ctx = eggo_config.get('execution', 'context')
+if exec_ctx == 'local':
+    sys.exit()
 conn = connect_to_region(eggo_config.get(exec_ctx, 'region'))
 user = getuser()
 instances = conn.get_only_instances(

@@ -16,6 +16,8 @@
 
 import os
 import json
+from shutil import rmtree
+from getpass import getuser
 from urlparse import urlparse
 from cStringIO import StringIO
 
@@ -23,7 +25,7 @@ from fabric.api import (
     task, env, execute, local, open_shell, put, cd, run, prefix, shell_env,
     require, hosts, path)
 from fabric.api import sudo as fabric_sudo
-from fabric.contrib.files import append
+from fabric.contrib.files import append, exists
 from boto.ec2 import connect_to_region
 from boto.s3.connection import S3Connection
 
@@ -32,72 +34,99 @@ from eggo.util import build_dest_filename
 from eggo.config import eggo_config, generate_luigi_cfg
 
 
-# user that fabric connects as
 exec_ctx = eggo_config.get('execution', 'context')
-env.user = eggo_config.get(exec_ctx, 'user')
-# ensure fabric uses EC2 private key when connecting
-if not env.key_filename:
-    env.key_filename = eggo_config.get('aws', 'ec2_private_key_file')
+
+
+# set some global Fabric env settings
+if exec_ctx in ['spark_ec2', 'director']:
+    # user that fabric connects as
+    env.user = eggo_config.get(exec_ctx, 'user')
+    # ensure fabric uses EC2 private key when connecting
+    if not env.key_filename:
+        env.key_filename = eggo_config.get('aws', 'ec2_private_key_file')
 
 
 @task
 def provision():
-    if exec_ctx == 'director':
+    if exec_ctx == 'spark_ec2':
+        provision_cmd = ('{spark_home}/ec2/spark-ec2 -k {ec2_key_pair} '
+                         '-i {ec2_private_key_file} -s {slaves} -t {type_} '
+                         '-r {region} {zone_arg} '
+                         '--copy-aws-credentials launch {stack_name}')
+        az = eggo_config.get('spark_ec2', 'availability_zone')
+        zone_arg = '--zone {0}'.format(az) if az != '' else ''
+        interp_cmd = provision_cmd.format(
+            spark_home=eggo_config.get('client_env', 'spark_home'),
+            ec2_key_pair=eggo_config.get('aws', 'ec2_key_pair'),
+            ec2_private_key_file=eggo_config.get('aws', 'ec2_private_key_file'),
+            slaves=eggo_config.get('spark_ec2', 'num_slaves'),
+            type_=eggo_config.get('spark_ec2', 'instance_type'),
+            region=eggo_config.get('spark_ec2', 'region'),
+            zone_arg=zone_arg,
+            stack_name=eggo_config.get('spark_ec2', 'stack_name'))
+        local(interp_cmd)
+    elif exec_ctx == 'director':
         eggo.director.provision()
-        return
+    else:
+        pass
 
-    provision_cmd = ('{spark_home}/ec2/spark-ec2 -k {ec2_key_pair} '
-                     '-i {ec2_private_key_file} -s {slaves} -t {type_} '
-                     '-r {region} {zone_arg} '
-                     '--copy-aws-credentials launch {stack_name}')
-    az = eggo_config.get('spark_ec2', 'availability_zone')
-    zone_arg = '--zone {0}'.format(az) if az != '' else ''
-    interp_cmd = provision_cmd.format(
-        spark_home=eggo_config.get('client_env', 'spark_home'),
-        ec2_key_pair=eggo_config.get('aws', 'ec2_key_pair'),
-        ec2_private_key_file=eggo_config.get('aws', 'ec2_private_key_file'),
-        slaves=eggo_config.get('spark_ec2', 'num_slaves'),
-        type_=eggo_config.get('spark_ec2', 'instance_type'),
-        region=eggo_config.get('spark_ec2', 'region'),
-        zone_arg=zone_arg,
-        stack_name=eggo_config.get('spark_ec2', 'stack_name'))
-    local(interp_cmd)
+    # if the DFS is on the local fs, the directories may need to be created
+    url = urlparse(eggo_config.get('dfs', 'dfs_root_url'))
+    if url.scheme == 'file':
+        local('mkdir -p {0}'.format(url.path))
+        url = urlparse(eggo_config.get('dfs', 'dfs_raw_data_url'))
+        local('mkdir -p {0}'.format(url.path))
+        url = urlparse(eggo_config.get('dfs', 'dfs_tmp_data_url'))
+        local('mkdir -p {0}'.format(url.path))
 
     # tag all the provisioned instances
-    from boto.ec2 import connect_to_region
-    conn = connect_to_region(eggo_config.get(exec_ctx, 'region'))
-    instances = conn.get_only_instances(
-        filters={'key-name': [eggo_config.get('aws', 'ec2_key_pair')]})
-    for instance in instances:
-        instance.add_tag('stack_name', eggo_config.get(exec_ctx, 'stack_name'))
+    if exec_ctx in ['spark_ec2', 'director']:
+        conn = connect_to_region(eggo_config.get(exec_ctx, 'region'))
+        instances = conn.get_only_instances(
+            filters={'key-name': [eggo_config.get('aws', 'ec2_key_pair')]})
+        for instance in instances:
+            instance.add_tag('owner', getuser())
+            instance.add_tag('stack_name',
+                             eggo_config.get(exec_ctx, 'stack_name'))
 
 
 def get_master_host():
-    if exec_ctx == 'director':
-        return eggo.director.get_gateway_host()
-
-    getmaster_cmd = ('{spark_home}/ec2/spark-ec2 -k {ec2_key_pair} '
-                     '-i {ec2_private_key_file} get-master {stack_name}')
-    interp_cmd = getmaster_cmd.format(
-        spark_home=eggo_config.get('client_env', 'spark_home'),
-        ec2_key_pair=eggo_config.get('aws', 'ec2_key_pair'),
-        ec2_private_key_file=eggo_config.get('aws', 'ec2_private_key_file'),
-        stack_name=eggo_config.get('spark_ec2', 'stack_name'))
-    result = local(interp_cmd, capture=True)
-    host = result.split('\n')[2].strip()
+    if exec_ctx == 'spark_ec2':
+        getmaster_cmd = ('{spark_home}/ec2/spark-ec2 -k {ec2_key_pair} '
+                         '-i {ec2_private_key_file} get-master {stack_name}')
+        interp_cmd = getmaster_cmd.format(
+            spark_home=eggo_config.get('client_env', 'spark_home'),
+            ec2_key_pair=eggo_config.get('aws', 'ec2_key_pair'),
+            ec2_private_key_file=eggo_config.get('aws', 'ec2_private_key_file'),
+            stack_name=eggo_config.get('spark_ec2', 'stack_name'))
+        result = local(interp_cmd, capture=True)
+        host = result.split('\n')[2].strip()
+    elif exec_ctx == 'director':
+        host = eggo.director.get_gateway_host()
+    elif exec_ctx == 'local':
+        host = 'localhost'
+    else:
+        raise NotImplementedError('{} exec ctx is not supported for this '
+                                  'method'.format(exec_ctx))
     return host
 
 
 def get_slave_hosts():
     if exec_ctx == 'director':
-        return eggo.director.get_worker_hosts()
-
-    def do():
-        with prefix('source /root/spark-ec2/ec2-variables.sh'):
-            result = run('echo $SLAVES').split()
-        return result
-    master = get_master_host()
-    return execute(do, hosts=master)[master]
+        hosts = eggo.director.get_worker_hosts()
+    elif exec_ctx == 'spark_ec2':
+        def do():
+            with prefix('source /root/spark-ec2/ec2-variables.sh'):
+                result = run('echo $SLAVES').split()
+            return result
+        master = get_master_host()
+        hosts = execute(do, hosts=master)[master]
+    elif exec_ctx == 'local':
+        hosts = []
+    else:
+        raise NotImplementedError('{} exec ctx is not supported for this '
+                                  'method'.format(exec_ctx))
+    return hosts
 
 
 def get_worker_hosts():
@@ -125,103 +154,119 @@ def deploy_config():
 
     execute(do, hosts=get_worker_hosts())
 
+
 def sudo(command, **kwargs):
     if exec_ctx == 'director' or kwargs:
         fabric_sudo(command, **kwargs)
+    elif exec_ctx == 'spark_ec2':
+        run(command) # spark_ec2 runs as root
+    elif exec_ctx == 'local':
+        local(command)
     else:
-        run(command) # spark-ec2 runs as root
+        raise ValueError('{} exec ctx is not supported for this '
+                         'method'.format(exec_ctx))
 
-def install_pip():
-    with cd('/tmp'):
-        run('curl -O https://bootstrap.pypa.io/get-pip.py')
-        sudo('python get-pip.py')
-        sudo('pip install ordereddict') # for py2.6 compat (for luigi)
+
+def install_pypa():
+    # does a global install on the system
+    sudo('curl -s https://bootstrap.pypa.io/get-pip.py | python')
+    sudo('pip install -U pip')
+    sudo('pip install -U setuptools')
+
 
 def install_git():
     sudo('yum install -y git')
 
+
 def install_fabric_luigi():
-    with cd('/tmp'):
-        if exec_ctx == 'director':
-            # python dev tools for fabric (pycrypto)
-            sudo('yum install -y gcc python-devel python-setuptools')
-        else:
-            # protobuf for luigi
-            sudo('yum install -y protobuf protobuf-devel protobuf-python')
-        sudo('pip install mechanize')
-        sudo('pip install fabric')
-        sudo('pip install luigi==1.1.2')
-
-
-def install_maven(version):
-    sudo('mkdir -p /usr/local/apache-maven')
-    with cd('/usr/local/apache-maven'):
-        sudo('wget http://apache.mesi.com.ar/maven/maven-3/{version}/binaries/'
-            'apache-maven-{version}-bin.tar.gz'.format(version=version))
-        sudo('tar -xzf apache-maven-{version}-bin.tar.gz'.format(
-            version=version))
-    env_mod = [
-        'export M2_HOME=/usr/local/apache-maven/apache-maven-{version}'.format(
-            version=version),
-        'export M2=$M2_HOME/bin',
-        'export PATH=$PATH:$M2']
     if exec_ctx == 'director':
-        env_mod.append('export JAVA_HOME=/usr/java/jdk1.7.0_67-cloudera')
-        env_mod.append('export PATH=$JAVA_HOME/bin:$PATH')
-    append('~/.bash_profile', env_mod)
-    run('mvn -version')
+        # python dev tools for fabric (pycrypto)
+        sudo('yum install -y gcc python-devel python-setuptools')
+    elif exec_ctx == 'spark_ec2':
+        # protobuf for luigi
+        sudo('yum install -y protobuf protobuf-devel protobuf-python')
+    sudo('pip install mechanize')
+    sudo('pip install fabric')
+    sudo('pip install ordereddict')  # for py2.6 compat (for luigi)
+    sudo('pip install luigi==1.1.2')
 
 
-def install_adam(path, fork, branch):
-    with cd(path):
-        run('git clone https://github.com/bigdatagenomics/adam.git')
-        with cd('adam'):
-            # check out desired fork/branch
-            if fork != 'bigdatagenomics':
-                run('git pull --no-commit https://github.com/{fork}/adam.git'
-                    ' {branch}'.format(fork=fork, branch=branch))
-            elif branch != 'master':
-                run('git checkout origin/{branch}'.format(branch=branch))
-            # build adam
-            with shell_env(MAVEN_OPTS='-Xmx1024m -XX:MaxPermSize=512m'):
-                run('mvn clean package -DskipTests')
-
-
-def install_eggo(path, fork, branch):
-    with cd(path):
-        run('git clone https://github.com/{fork}/eggo.git'.format(fork=fork))
-        with cd('eggo'):
+def install_adam(work_path, adam_home, maven_version, fork, branch):
+    # dnload mvn
+    mvn_path = os.path.join(work_path, 'apache-maven')
+    run('mkdir -p {0}'.format(mvn_path))
+    with cd(mvn_path):
+        run('wget http://apache.mesi.com.ar/maven/maven-3/{version}/binaries/'
+            'apache-maven-{version}-bin.tar.gz'.format(version=maven_version))
+        run('tar -xzf apache-maven-{0}-bin.tar.gz'.format(maven_version))
+    # checkout adam
+    if not exists(adam_home):
+        adam_parent = os.path.dirname(adam_home)
+        run('mkdir -p {0}'.format(adam_parent))
+        with cd(adam_parent):
+            run('git clone https://github.com/{0}/adam.git'.format(fork))
             if branch != 'master':
-                run('git checkout origin/{branch}'.format(branch=branch))
-            sudo('python setup.py install')
-
-def create_users():
+                with cd('adam'):
+                    run('git checkout origin/{branch}'.format(branch=branch))
+    # build adam
+    shell_vars = {}
+    shell_vars['M2_HOME'] = os.path.join(
+        mvn_path, 'apache-maven-{0}'.format(maven_version))
+    shell_vars['M2'] = os.path.join(shell_vars['M2_HOME'], 'bin')
+    shell_vars['MAVEN_OPTS'] = '-Xmx1024m -XX:MaxPermSize=512m'
     if exec_ctx == 'director':
-        sudo('hadoop fs -mkdir -p /user/{user}'.format(user=env.user), user='hdfs')
-        sudo('hadoop fs -chown {user} /user/{user}'.format(user=env.user), user='hdfs')
+        shell_vars['JAVA_HOME'] = '/usr/java/jdk1.7.0_67-cloudera'
+    with cd(adam_home):
+        with shell_env(**shell_vars):
+            run('$M2/mvn clean package -DskipTests')
+
+
+def install_eggo(work_path, eggo_home, fork, branch):
+    if not exists(eggo_home):
+        eggo_parent = os.path.dirname(eggo_home)
+        run('mkdir -p {0}'.format(eggo_parent))
+        with cd(eggo_parent):
+            run('git clone https://github.com/{0}/eggo.git'.format(fork))
+            if branch != 'master':
+                with cd('eggo'):
+                    run('git checkout origin/{0}'.format(branch))
+    with cd(eggo_home):
+        sudo('python setup.py install')
+
+
+def create_hdfs_users():
+    sudo('hadoop fs -mkdir /user/{user}'.format(user=env.user), user='hdfs')
+    sudo('hadoop fs -chown {user} /user/{user}'.format(user=env.user), user='hdfs')
+
 
 @task
 def setup_master():
     work_path = eggo_config.get('worker_env', 'work_path')
     adam_fork = eggo_config.get('versions', 'adam_fork')
     adam_branch = eggo_config.get('versions', 'adam_branch')
+    adam_home = eggo_config.get('worker_env', 'adam_home')
     eggo_fork = eggo_config.get('versions', 'eggo_fork')
     eggo_branch = eggo_config.get('versions', 'eggo_branch')
+    eggo_home = eggo_config.get('worker_env', 'eggo_home')
+    maven_version = eggo_config.get('versions', 'maven')
 
     def do():
         run('mkdir -p -m 777 {work_path}'.format(work_path=work_path))
-        install_pip()
-        install_git()
+        install_pypa()
+        if exec_ctx == 'director':
+            install_git()
         install_fabric_luigi()
-        install_maven(eggo_config.get('versions', 'maven'))
-        install_adam(work_path, adam_fork, adam_branch)
-        install_eggo(work_path, eggo_fork, eggo_branch)
-        create_users()
-        # restart Hadoop
-        run('if [ -e /root/ephemeral-hdfs/bin/stop-all.sh ]; then /root/ephemeral-hdfs/bin/stop-all.sh; fi')
-        run('if [ -e /root/ephemeral-hdfs/bin/start-all.sh ]; then /root/ephemeral-hdfs/bin/start-all.sh; fi')
+        install_adam(work_path, adam_home, maven_version, adam_fork, adam_branch)
+        install_eggo(work_path, eggo_home, eggo_fork, eggo_branch)
+        if exec_ctx == 'director':
+            create_users()
+        if exec_ctx == 'spark_ec2':
+            # restart Hadoop
+            run('/root/ephemeral-hdfs/bin/stop-all.sh')
+            run('/root/ephemeral-hdfs/bin/start-all.sh')
 
     execute(do, hosts=get_master_host())
+
 
 @task
 def debug_env():
@@ -232,25 +277,35 @@ def debug_env():
 
     execute(do, hosts=get_master_host())
 
+
 @task
 def setup_slaves():
     work_path = eggo_config.get('worker_env', 'work_path')
     eggo_fork = eggo_config.get('versions', 'eggo_fork')
     eggo_branch = eggo_config.get('versions', 'eggo_branch')
+    eggo_home = eggo_config.get('worker_env', 'eggo_home')
 
     def do():
+        run('mkdir -p {work_path}'.format(work_path=work_path))
         env.parallel = True
-        install_pip()
-        install_git()
-        install_eggo(work_path, eggo_fork, eggo_branch)
+        install_pypa()
+        if exec_ctx == 'director':
+            install_git()
+        sudo('pip install ordereddict')  # for py2.6 compat (for luigi)
+        install_eggo(work_path, eggo_home, eggo_fork, eggo_branch)
 
-    execute(do, hosts=get_slave_hosts())
+    if exec_ctx in ['director', 'spark_ec2']:
+        execute(do, hosts=get_slave_hosts())
+
 
 @task
 def list():
     if exec_ctx == 'director':
         eggo.director.list()
-    return
+    else:
+        raise NotImplementedError('{} exec ctx is not supported for this '
+                                  'method'.format(exec_ctx))
+
 
 
 @task
@@ -263,15 +318,17 @@ def teardown():
     if exec_ctx == 'director':
         eggo.director.teardown()
         return
-
-    teardown_cmd = ('{spark_home}/ec2/spark-ec2 -k {ec2_key_pair} '
-                    '-i {ec2_private_key_file} destroy {stack_name}')
-    interp_cmd = teardown_cmd.format(
-        spark_home=eggo_config.get('client_env', 'spark_home'),
-        ec2_key_pair=eggo_config.get('aws', 'ec2_key_pair'),
-        ec2_private_key_file=eggo_config.get('aws', 'ec2_private_key_file'),
-        stack_name=eggo_config.get('spark_ec2', 'stack_name'))
-    local(interp_cmd)
+    elif exec_ctx == 'spark_ec2':
+        teardown_cmd = ('{spark_home}/ec2/spark-ec2 -k {ec2_key_pair} '
+                        '-i {ec2_private_key_file} destroy {stack_name}')
+        interp_cmd = teardown_cmd.format(
+            spark_home=eggo_config.get('client_env', 'spark_home'),
+            ec2_key_pair=eggo_config.get('aws', 'ec2_key_pair'),
+            ec2_private_key_file=eggo_config.get('aws', 'ec2_private_key_file'),
+            stack_name=eggo_config.get('spark_ec2', 'stack_name'))
+        local(interp_cmd)
+    else:
+        pass
 
 
 @task
@@ -318,6 +375,8 @@ def delete_raw(config):
         bucket = conn.get_bucket(url.netloc)
         keys = bucket.list(url.path.lstrip('/'))
         bucket.delete_keys(keys)
+    elif url.scheme == 'file':
+        rmtree(url.path)
     else:
         raise NotImplementedError(
             "{0} dfs scheme not supported".format(url.scheme))
@@ -335,6 +394,8 @@ def delete_tmp(config):
         bucket = conn.get_bucket(url.netloc)
         keys = bucket.list(url.path.lstrip('/'))
         bucket.delete_keys(keys)
+    elif url.scheme == 'file':
+        rmtree(url.path)
     else:
         raise NotImplementedError(
             "{0} dfs scheme not supported".format(url.scheme))
@@ -352,6 +413,8 @@ def delete_toasted(config):
         bucket = conn.get_bucket(url.netloc)
         keys = bucket.list(url.path.lstrip('/'))
         bucket.delete_keys(keys)
+    elif url.scheme == 'file':
+        rmtree(url.path)
     else:
         raise NotImplementedError(
             "{0} dfs scheme not supported".format(url.scheme))
@@ -369,13 +432,15 @@ def update_eggo():
     work_path = eggo_config.get('worker_env', 'work_path')
     eggo_fork = eggo_config.get('versions', 'eggo_fork')
     eggo_branch = eggo_config.get('versions', 'eggo_branch')
+    eggo_home = eggo_config.get('worker_env', 'eggo_home')
 
     def do():
         env.parallel = True
-        sudo('rm -rf {0}/eggo'.format(work_path))
-        install_eggo(work_path, eggo_fork, eggo_branch)
+        if exec_ctx in ['director', 'spark_ec2']:
+            sudo('rm -rf {0}'.format(eggo_home))
+        install_eggo(work_path, eggo_home, eggo_fork, eggo_branch)
 
-    execute(do, hosts=[get_master_host()] + get_slave_hosts())
+    execute(do, hosts=get_worker_hosts())
 
 
 # Director commands (experimental)
@@ -393,4 +458,3 @@ def hue_web_proxy():
 @task
 def yarn_web_proxy():
     eggo.director.yarn_web_proxy()
-

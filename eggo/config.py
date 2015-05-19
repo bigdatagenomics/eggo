@@ -81,7 +81,8 @@ def assert_eggo_config_complete(c):
     assert_section_complete('client_env')
     assert_section_complete('worker_env')
     exec_ctx = c.get('execution', 'context')
-    assert_section_complete(exec_ctx)
+    if ref.has_section(exec_ctx):
+        assert_section_complete(exec_ctx)
 
 
 def validate_eggo_config(c):
@@ -101,10 +102,10 @@ supported_formats = ['bdg']  # # TODO: support ga4gh
 
 def generate_luigi_cfg():
     cfg = ('[core]\n'
-           'logging_conf_file:{work_path}/eggo/conf/luigi/luigi_logging.cfg\n'
+           'logging_conf_file:{eggo_home}/conf/luigi/luigi_logging.cfg\n'
            '[hadoop]\n'
            'command: hadoop\n')
-    return cfg.format(work_path=eggo_config.get('worker_env', 'work_path'))
+    return cfg.format(eggo_home=eggo_config.get('worker_env', 'eggo_home'))
 
 
 # TOAST CONFIGURATION
