@@ -279,7 +279,8 @@ class DownloadDatasetHadoopTask(JobTask):
         addl_conf = {'mapred.map.tasks.speculative.execution': 'false',
                      'mapred.task.timeout': 12000000}
         # TODO: can we delete the AWS vars with Director? does it set AWS cred in core-site.xml?
-        streaming_args=['-cmdenv', 'EGGO_CONFIG=' + eggo_config.get('worker_env', 'eggo_config_path'),
+        streaming_args=['-cmdenv', 'EGGO_HOME=' + eggo_config.get('worker_env', 'eggo_home'),
+                        '-cmdenv', 'EGGO_CONFIG=' + eggo_config.get('worker_env', 'eggo_config_path'),
                         '-cmdenv', 'AWS_ACCESS_KEY_ID=' + eggo_config.get('aws', 'aws_access_key_id'),
                         '-cmdenv', 'AWS_SECRET_ACCESS_KEY=' + eggo_config.get('aws', 'aws_secret_access_key')]
         return HadoopJobRunner(streaming_jar=eggo_config.get('worker_env', 'streaming_jar'),
