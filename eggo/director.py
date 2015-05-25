@@ -39,11 +39,14 @@ REGION = eggo_config.get('director', 'region')
 LAUNCHER_INSTANCE_TYPE = eggo_config.get('director', 'launcher_instance_type')
 LAUNCHER_AMI = eggo_config.get('director', 'launcher_ami')
 CLUSTER_AMI = eggo_config.get('director', 'cluster_ami')
+NUM_WORKERS = eggo_config.get('director', 'num_workers')
 STACK_NAME = eggo_config.get('director', 'stack_name')
 CLOUDFORMATION_TEMPLATE = eggo_config.get('director', 'cloudformation_template')
 DIRECTOR_CONF_TEMPLATE = eggo_config.get('director', 'director_conf_template')
 
 def provision():
+    start_time = datetime.now()
+
     # create cloud formation stack (VPC etc)
     cf_conn = create_cf_connection()
     create_stack(cf_conn, STACK_NAME)
@@ -55,12 +58,27 @@ def provision():
     # run bootstrap on launcher
     execute(run_director_bootstrap, hosts=[launcher_instance.ip_address])
 
+    end_time = datetime.now()
+    print "Cluster has started. Took {t} minutes.".format(
+        t=(end_time - start_time).seconds / 60
+    )
+
 def list():
     conn = create_ec2_connection()
     print 'Launcher', get_launcher_instance(conn).ip_address
     print 'Manager', get_manager_instance(conn).ip_address
     print 'Gateway', get_gateway_instance(conn).ip_address
     print 'Master', get_master_instance(conn).ip_address
+    for instance in get_worker_instances(conn):
+        print 'Worker', instance.ip_address
+
+def get_gateway_host():
+    conn = create_ec2_connection()
+    return get_gateway_instance(conn).ip_address
+
+def get_worker_hosts():
+    conn = create_ec2_connection()
+    return [i.ip_address for i in get_worker_instances(conn)]
 
 def login():
     conn = create_ec2_connection()
@@ -108,7 +126,7 @@ def create_ec2_connection():
 def create_stack(cf_conn, name):
     try:
         if len(cf_conn.describe_stacks(name)) > 0:
-            print "Stack '{n}' already exists.".format(n=name)
+            print "Stack '{n}' already exists. Reusing.".format(n=name)
             return
     except:
         # stack does not exist
@@ -122,6 +140,11 @@ def create_stack(cf_conn, name):
     wait_for_stack_status(cf_conn, name, 'CREATE_COMPLETE')
 
 def create_launcher_instance(conn, cf_conn):
+    launcher_instances = get_instances(conn, 'group', 'launcher')
+    if len(launcher_instances) > 0:
+        print "Launcher instance ({instance}) already exists. Reusing.".format(
+            instance=launcher_instances[0].ip_address)
+        return launcher_instances[0]
     print "Creating launcher instance."
     # see http://stackoverflow.com/questions/19029588/how-to-auto-assign-public-ip-to-ec2-instance-with-boto
     interface = NetworkInterfaceSpecification(subnet_id=get_subnet_id(cf_conn),
@@ -138,9 +161,10 @@ def create_launcher_instance(conn, cf_conn):
     instance.add_tag('owner', EC2_KEY_PAIR)
     instance.add_tag('group', 'launcher')
     wait_for_instance_state(conn, instance)
+    execute(install_director, hosts=[instance.ip_address])
     return instance
 
-def run_director_bootstrap():
+def install_director():
     # install Cloudera Director client
     run('sudo wget http://archive.cloudera.com/director/redhat/6/x86_64/director/cloudera'
         '-director.repo -O /etc/yum.repos.d/cloudera-director.repo')
@@ -150,6 +174,7 @@ def run_director_bootstrap():
     put(EC2_PRIVATE_KEY_FILE, 'id.pem')
     run('chmod 600 id.pem')
 
+def run_director_bootstrap():
     # replace variables in conf template and copy to launcher
     cf_conn = create_cf_connection()
     with open(DIRECTOR_CONF_TEMPLATE, 'r') as director_conf_template:
@@ -160,6 +185,7 @@ def run_director_bootstrap():
         subnetId = get_subnet_id(cf_conn)
         securityGroupsIds = get_security_group_id(cf_conn)
         image = CLUSTER_AMI
+        num_workers = NUM_WORKERS
         director_conf=director_conf_template.read() % locals()
     tmp_dir = mkdtemp(prefix='tmp_eggo_')
     tmp_file = '{0}/aws.conf'.format(tmp_dir)
@@ -206,6 +232,9 @@ def get_launcher_instance(conn):
 
 def get_manager_instance(conn):
     return get_instances(conn, 'group', 'manager')[0]
+
+def get_worker_instances(conn):
+    return get_instances(conn, 'group', 'worker')
 
 def get_gateway_instance(conn):
     return get_instances(conn, 'group', 'gateway')[0]

@@ -32,7 +32,8 @@ from eggo.config import eggo_config, generate_luigi_cfg
 
 
 # user that fabric connects as
-env.user = eggo_config.get('spark_ec2', 'user')
+exec_ctx = eggo_config.get('execution', 'context')
+env.user = eggo_config.get(exec_ctx, 'user')
 # ensure fabric uses EC2 private key when connecting
 if not env.key_filename:
     env.key_filename = eggo_config.get('aws', 'ec2_private_key_file')
@@ -40,6 +41,10 @@ if not env.key_filename:
 
 @task
 def provision():
+    if exec_ctx == 'director':
+        eggo.director.provision()
+        return
+
     provision_cmd = ('{spark_home}/ec2/spark-ec2 -k {ec2_key_pair} '
                      '-i {ec2_private_key_file} -s {slaves} -t {type_} '
                      '-r {region} {zone_arg} '
@@ -58,7 +63,7 @@ def provision():
     local(interp_cmd)
 
     # tag all the provisioned instances
-    exec_ctx = eggo_config.get('execution', 'context')
+    from boto.ec2 import connect_to_region
     conn = connect_to_region(eggo_config.get(exec_ctx, 'region'))
     instances = conn.get_only_instances(
         filters={'key-name': [eggo_config.get('aws', 'ec2_key_pair')]})
@@ -67,6 +72,9 @@ def provision():
 
 
 def get_master_host():
+    if exec_ctx == 'director':
+        return eggo.director.get_gateway_host()
+
     getmaster_cmd = ('{spark_home}/ec2/spark-ec2 -k {ec2_key_pair} '
                      '-i {ec2_private_key_file} get-master {stack_name}')
     interp_cmd = getmaster_cmd.format(
@@ -80,6 +88,9 @@ def get_master_host():
 
 
 def get_slave_hosts():
+    if exec_ctx == 'director':
+        return eggo.director.get_worker_hosts()
+
     def do():
         with prefix('source /root/spark-ec2/ec2-variables.sh'):
             result = run('echo $SLAVES').split()
@@ -209,6 +220,12 @@ def setup_slaves():
 
     execute(do, hosts=get_slave_hosts())
 
+@task
+def list():
+    if exec_ctx == 'director':
+        eggo.director.list()
+    return
+
 
 @task
 def login():
@@ -217,6 +234,10 @@ def login():
 
 @task
 def teardown():
+    if exec_ctx == 'director':
+        eggo.director.teardown()
+    return
+
     teardown_cmd = ('{spark_home}/ec2/spark-ec2 -k {ec2_key_pair} '
                     '-i {ec2_private_key_file} destroy {stack_name}')
     interp_cmd = teardown_cmd.format(
@@ -334,23 +355,6 @@ def update_eggo():
 # Director commands (experimental)
 
 @task
-def provision_director():
-    env.user = 'ec2-user' # use ec2-user for launcher instance login
-    eggo.director.provision()
-
-
-@task
-def list_director():
-    eggo.director.list()
-
-
-@task
-def login_director():
-    env.user = 'ec2-user' # use ec2-user for gateway instance login
-    eggo.director.login()
-
-
-@task
 def cm_web_proxy():
     eggo.director.cm_web_proxy()
 
@@ -364,8 +368,3 @@ def hue_web_proxy():
 def yarn_web_proxy():
     eggo.director.yarn_web_proxy()
 
-
-@task
-def teardown_director():
-    env.user = 'ec2-user' # use ec2-user for launcher instance login
-    eggo.director.teardown()
