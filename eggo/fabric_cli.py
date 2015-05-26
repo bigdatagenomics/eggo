@@ -22,6 +22,7 @@ from cStringIO import StringIO
 from fabric.api import (
     task, env, execute, local, open_shell, put, cd, run, prefix, shell_env,
     require, hosts, path)
+from fabric.api import sudo as fabric_sudo
 from fabric.contrib.files import append
 from boto.ec2 import connect_to_region
 from boto.s3.connection import S3Connection
@@ -111,7 +112,7 @@ def deploy_config():
 
     def do():
         # 0. ensure that the work path exists on the worker nodes
-        run('mkdir -p {work_path}'.format(work_path=work_path))
+        run('mkdir -p -m 777 {work_path}'.format(work_path=work_path))
 
         # 1. copy local eggo config file to remote cluster
         put(local_path=os.environ['EGGO_CONFIG'],
@@ -124,35 +125,49 @@ def deploy_config():
 
     execute(do, hosts=get_worker_hosts())
 
+def sudo(command, **kwargs):
+    if exec_ctx == 'director' or kwargs:
+        fabric_sudo(command, **kwargs)
+    else:
+        run(command) # spark-ec2 runs as root
 
 def install_pip():
     with cd('/tmp'):
         run('curl -O https://bootstrap.pypa.io/get-pip.py')
-        run('python get-pip.py')
+        sudo('python get-pip.py')
+        sudo('pip install ordereddict') # for py2.6 compat (for luigi)
 
+def install_git():
+    sudo('yum install -y git')
 
 def install_fabric_luigi():
     with cd('/tmp'):
-        # protobuf for luigi
-        run('yum install -y protobuf protobuf-devel protobuf-python')
-        run('pip install mechanize')
-        run('pip install fabric')
-        run('pip install ordereddict')  # for py2.6 compat (for luigi)
-        run('pip install luigi')
+        if exec_ctx == 'director':
+            # python dev tools for fabric (pycrypto)
+            sudo('yum install -y gcc python-devel python-setuptools')
+        else:
+            # protobuf for luigi
+            sudo('yum install -y protobuf protobuf-devel protobuf-python')
+        sudo('pip install mechanize')
+        sudo('pip install fabric')
+        sudo('pip install luigi')
 
 
 def install_maven(version):
-    run('mkdir -p /usr/local/apache-maven')
+    sudo('mkdir -p /usr/local/apache-maven')
     with cd('/usr/local/apache-maven'):
-        run('wget http://apache.mesi.com.ar/maven/maven-3/{version}/binaries/'
+        sudo('wget http://apache.mesi.com.ar/maven/maven-3/{version}/binaries/'
             'apache-maven-{version}-bin.tar.gz'.format(version=version))
-        run('tar -xzf apache-maven-{version}-bin.tar.gz'.format(
+        sudo('tar -xzf apache-maven-{version}-bin.tar.gz'.format(
             version=version))
     env_mod = [
         'export M2_HOME=/usr/local/apache-maven/apache-maven-{version}'.format(
             version=version),
         'export M2=$M2_HOME/bin',
         'export PATH=$PATH:$M2']
+    if exec_ctx == 'director':
+        env_mod.append('export JAVA_HOME=/usr/java/jdk1.7.0_67-cloudera')
+        env_mod.append('export PATH=$JAVA_HOME/bin:$PATH')
     append('~/.bash_profile', env_mod)
     run('mvn -version')
 
@@ -174,16 +189,16 @@ def install_adam(path, fork, branch):
 
 def install_eggo(path, fork, branch):
     with cd(path):
-        run('git clone https://github.com/bigdatagenomics/eggo.git')
+        run('git clone https://github.com/{fork}/eggo.git'.format(fork=fork))
         with cd('eggo'):
-            # check out desired fork/branch
-            if fork != 'bigdatagenomics':
-                run('git pull --no-commit https://github.com/{fork}/eggo.git'
-                    ' {branch}'.format(fork=fork, branch=branch))
-            elif branch != 'master':
+            if branch != 'master':
                 run('git checkout origin/{branch}'.format(branch=branch))
-            run('python setup.py install')
+            sudo('python setup.py install')
 
+def create_users():
+    if exec_ctx == 'director':
+        sudo('hadoop fs -mkdir -p /user/{user}'.format(user=env.user), user='hdfs')
+        sudo('hadoop fs -chown {user} /user/{user}'.format(user=env.user), user='hdfs')
 
 @task
 def setup_master():
@@ -194,18 +209,28 @@ def setup_master():
     eggo_branch = eggo_config.get('versions', 'eggo_branch')
 
     def do():
-        run('mkdir -p {work_path}'.format(work_path=work_path))
+        run('mkdir -p -m 777 {work_path}'.format(work_path=work_path))
         install_pip()
+        install_git()
         install_fabric_luigi()
         install_maven(eggo_config.get('versions', 'maven'))
         install_adam(work_path, adam_fork, adam_branch)
         install_eggo(work_path, eggo_fork, eggo_branch)
+        create_users()
         # restart Hadoop
-        run('/root/ephemeral-hdfs/bin/stop-all.sh')
-        run('/root/ephemeral-hdfs/bin/start-all.sh')
+        run('if [ -e /root/ephemeral-hdfs/bin/stop-all.sh ]; then /root/ephemeral-hdfs/bin/stop-all.sh; fi')
+        run('if [ -e /root/ephemeral-hdfs/bin/start-all.sh ]; then /root/ephemeral-hdfs/bin/start-all.sh; fi')
 
     execute(do, hosts=get_master_host())
 
+@task
+def debug_env():
+    def do():
+        run('java -version')
+        run('javac -version')
+        run('mvn -version')
+
+    execute(do, hosts=get_master_host())
 
 @task
 def setup_slaves():
@@ -216,6 +241,7 @@ def setup_slaves():
     def do():
         env.parallel = True
         install_pip()
+        install_git()
         install_eggo(work_path, eggo_fork, eggo_branch)
 
     execute(do, hosts=get_slave_hosts())
@@ -236,7 +262,7 @@ def login():
 def teardown():
     if exec_ctx == 'director':
         eggo.director.teardown()
-    return
+        return
 
     teardown_cmd = ('{spark_home}/ec2/spark-ec2 -k {ec2_key_pair} '
                     '-i {ec2_private_key_file} destroy {stack_name}')
@@ -346,7 +372,7 @@ def update_eggo():
 
     def do():
         env.parallel = True
-        run('rm -rf $EGGO_HOME')
+        sudo('rm -rf {0}/eggo'.format(work_path))
         install_eggo(work_path, eggo_fork, eggo_branch)
 
     execute(do, hosts=[get_master_host()] + get_slave_hosts())

@@ -33,7 +33,7 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     scripts=['bin/eggo', 'bin/toaster.py'],
-    install_requires=['fabric', 'luigi', 'boto'],
+    #install_requires=['fabric', 'luigi', 'boto'], # fails when using Cloudera Director, http://stackoverflow.com/questions/28443041/python-daemon-2-0-5-wont-install-with-pip
     keywords=('bdg adam spark eggo genomics omics public data'),
     license='Apache License, Version 2.0',
     classifiers=[
