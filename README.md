@@ -220,6 +220,7 @@ eggo provision
 eggo deploy_config
 eggo setup_master
 eggo setup_slaves
+eggo delete_all:config=$EGGO_HOME/test/registry/test-genotypes.json
 eggo toast:config=$EGGO_HOME/test/registry/test-genotypes.json
 eggo teardown
 ```

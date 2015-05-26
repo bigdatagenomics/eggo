@@ -136,11 +136,10 @@ def _dnload_to_local_upload_to_dfs(source, destination, compression):
     # source: (string) URL suitable for curl
     # destination: (string) full Hadoop path of destination file name
     # compression: (bool) whether file needs to be decompressed
+    tmp_local_dir = mkdtemp(
+        prefix='tmp_eggo_',
+        dir=eggo_config.get('worker_env', 'work_path'))
     try:
-        tmp_local_dir = mkdtemp(
-            prefix='tmp_eggo_',
-            dir=eggo_config.get('worker_env', 'work_path'))
-        
         # 1. dnload file
         dnload_cmd = 'pushd {tmp_local_dir} && curl -L -O {source} && popd'
         p = Popen(dnload_cmd.format(tmp_local_dir=tmp_local_dir,
@@ -258,6 +257,7 @@ class PrepareHadoopDownloadTask(Task):
 
             # 3. Copy command file to Hadoop filesystem
             hdfs_client = HdfsClient()
+            hdfs_client.mkdir(os.path.dirname(self.hdfs_path), True)
             hdfs_client.put(tmp_command_file, self.hdfs_path)
         except:
             raise
