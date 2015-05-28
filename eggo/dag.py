@@ -102,7 +102,11 @@ def flag_target(path):
     elif path.startswith('hdfs:'):
         return HdfsFlagTarget(path)
     elif path.startswith('file:'):
-        return LocalFlagTarget(path)
+        # Hadoop job runner requires either an HdfsTarget or an S3FlagTarget,
+        # which is why we cannot use the LocalFlagTarget.  Should be ok as long
+        # as we keep using the Hadoop client CLI
+        # return LocalFlagTarget(path)
+        return HdfsFlagTarget(path)
     else:
         raise ValueError('Unrecognized URI protocol: {path}'.format(path))
 
@@ -134,7 +138,7 @@ def create_SUCCESS_file(path):
 
 def _dnload_to_local_upload_to_dfs(source, destination, compression):
     # source: (string) URL suitable for curl
-    # destination: (string) full Hadoop path of destination file name
+    # destination: (string) full URL of destination file name
     # compression: (bool) whether file needs to be decompressed
     tmp_local_dir = mkdtemp(
         prefix='tmp_eggo_',
@@ -173,7 +177,7 @@ def _dnload_to_local_upload_to_dfs(source, destination, compression):
             filename = local_files[0]
             # ensure the dfs directory exists; this cmd may fail if the dir
             # already exists, but that's ok (though it shouldn't already exist)
-            create_dir_cmd = '{hadoop_home}/bin/hadoop fs -mkdir {tmp_dfs_dir}'
+            create_dir_cmd = '{hadoop_home}/bin/hadoop fs -mkdir -p {tmp_dfs_dir}'
             p = Popen(create_dir_cmd.format(
                           hadoop_home=eggo_config.get('worker_env', 'hadoop_home'),
                           tmp_dfs_dir=tmp_staged_dir),
@@ -195,12 +199,8 @@ def _dnload_to_local_upload_to_dfs(source, destination, compression):
                           final_path=destination),
                       shell=True)
             p.wait()
-        except:
-            raise
         finally:
             pass # TODO: clean up dfs tmp dir
-    except:
-        raise
     finally:
         rmtree(tmp_local_dir)
 
@@ -259,8 +259,6 @@ class PrepareHadoopDownloadTask(Task):
             hdfs_client = HdfsClient()
             hdfs_client.mkdir(os.path.dirname(self.hdfs_path), True)
             hdfs_client.put(tmp_command_file, self.hdfs_path)
-        except:
-            raise
         finally:
             rmtree(tmp_dir)
 
