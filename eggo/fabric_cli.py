@@ -150,7 +150,7 @@ def install_fabric_luigi():
             sudo('yum install -y protobuf protobuf-devel protobuf-python')
         sudo('pip install mechanize')
         sudo('pip install fabric')
-        sudo('pip install luigi')
+        sudo('pip install luigi==1.1.2')
 
 
 def install_maven(version):

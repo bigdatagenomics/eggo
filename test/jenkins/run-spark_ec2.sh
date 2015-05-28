@@ -34,7 +34,7 @@ virtualenv eggo_venv && source eggo_venv/bin/activate
 pip install -U pip  # python-daemon only installs with a newer version of pip
 pip install -U setuptools  # http://www.fabfile.org/faq.html#fabric-installs-but-doesn-t-run
 pip install pytest
-pip install fabric luigi boto # depended on by eggo
+pip install fabric luigi==1.1.2 boto # depended on by eggo
 pip install .  # install eggo
 
 
