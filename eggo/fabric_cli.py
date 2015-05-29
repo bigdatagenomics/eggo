@@ -188,7 +188,7 @@ def install_fabric_luigi():
     sudo('pip install mechanize')
     sudo('pip install fabric')
     sudo('pip install ordereddict')  # for py2.6 compat (for luigi)
-    sudo('pip install luigi==1.1.2')
+    sudo('pip install luigi')
 
 
 def install_adam(work_path, adam_home, maven_version, fork, branch):
@@ -291,7 +291,7 @@ def setup_slaves():
         install_pypa()
         if exec_ctx == 'director':
             install_git()
-        sudo('pip install ordereddict')  # for py2.6 compat (for luigi)
+        install_fabric_luigi()
         install_eggo(work_path, eggo_home, eggo_fork, eggo_branch)
 
     if exec_ctx in ['director', 'spark_ec2']:
