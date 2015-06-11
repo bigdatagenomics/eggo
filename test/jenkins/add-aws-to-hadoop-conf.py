@@ -27,28 +27,50 @@ import os
 from xml.etree.ElementTree import parse, fromstring
 
 
-s1 = """<property>
-            <name>fs.s3n.impl</name>
-            <value>org.apache.hadoop.fs.s3native.NativeS3FileSystem</value>
-        </property> """
-s2 = """<property>
-            <name>fs.s3n.awsAccessKeyId</name>
-            <value>{AWS_ACCESS_KEY_ID}</value>
-        </property> """.format(**os.environ)
-s3 = """<property>
-            <name>fs.s3n.awsSecretAccessKey</name>
-            <value>{AWS_SECRET_ACCESS_KEY}</value>
-        </property> """.format(**os.environ)
-p1 = fromstring(s1)
-p2 = fromstring(s2)
-p3 = fromstring(s3)
+s3_1 = """<property>
+              <name>fs.s3.impl</name>
+              <value>org.apache.hadoop.fs.s3.S3FileSystem</value>
+          </property> """
+s3_2 = """<property>
+              <name>fs.s3.awsAccessKeyId</name>
+              <value>{AWS_ACCESS_KEY_ID}</value>
+          </property> """.format(**os.environ)
+s3_3 = """<property>
+              <name>fs.s3.awsSecretAccessKey</name>
+              <value>{AWS_SECRET_ACCESS_KEY}</value>
+          </property> """.format(**os.environ)
+s3n_1 = """<property>
+               <name>fs.s3n.impl</name>
+               <value>org.apache.hadoop.fs.s3native.NativeS3FileSystem</value>
+           </property> """
+s3n_2 = """<property>
+               <name>fs.s3n.awsAccessKeyId</name>
+               <value>{AWS_ACCESS_KEY_ID}</value>
+           </property> """.format(**os.environ)
+s3n_3 = """<property>
+               <name>fs.s3n.awsSecretAccessKey</name>
+               <value>{AWS_SECRET_ACCESS_KEY}</value>
+           </property> """.format(**os.environ)
+s3a_1 = """<property>
+               <name>fs.s3a.impl</name>
+               <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+           </property> """
+s3a_2 = """<property>
+               <name>fs.s3a.awsAccessKeyId</name>
+               <value>{AWS_ACCESS_KEY_ID}</value>
+           </property> """.format(**os.environ)
+s3a_3 = """<property>
+               <name>fs.s3a.awsSecretAccessKey</name>
+               <value>{AWS_SECRET_ACCESS_KEY}</value>
+           </property> """.format(**os.environ)
 
+s = [s3_1, s3_2, s3_3, s3n_1, s3n_2, s3n_3, s3a_1, s3a_2, s3a_3]
+p = [fromstring(x) for x in s]
 
 hadoop_home = os.environ['HADOOP_HOME']
 core_site_xml = os.path.join(hadoop_home, 'etc/hadoop/core-site.xml')
 tree = parse(core_site_xml)
 root = tree.getroot()
-root.append(p1)
-root.append(p2)
-root.append(p3)
+for x in p:
+    root.append(x)
 tree.write(core_site_xml)
