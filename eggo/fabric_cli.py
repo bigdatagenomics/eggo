@@ -41,7 +41,7 @@ def wrun(*args, **kwargs):
     if exec_ctx == 'local':
         return local(*args, **kwargs)
     elif exec_ctx == 'spark_ec2':
-        return run(*args, **kwargs):
+        return run(*args, **kwargs)
     elif exec_ctx == 'director':
         return run(*args, **kwargs)
     else:
@@ -53,7 +53,7 @@ def wsudo(*args, **kwargs):
     if exec_ctx == 'local':
         return local(*args, **kwargs)
     elif exec_ctx == 'spark_ec2':
-        return run(*args, **kwargs):
+        return run(*args, **kwargs)
     elif exec_ctx == 'director':
         return sudo(*args, **kwargs)
     else:
