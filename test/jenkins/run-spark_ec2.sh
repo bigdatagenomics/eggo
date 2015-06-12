@@ -51,7 +51,7 @@ curl $HADOOP_TARBALL_URL | tar xzf -
 export HADOOP_HOME=$EGGO_HOME/$(basename $HADOOP_TARBALL_URL .tar.gz)
 export HADOOP_CLASSPATH=$HADOOP_CLASSPATH:$HADOOP_HOME/share/hadoop/tools/lib/*  # hadoop-aws.jar: http://stackoverflow.com/questions/28029134
 export PATH=$HADOOP_HOME/bin:$PATH  # bc python tests use Luigi hadoop CLI wrapper
-test/jenkins/add-aws-to-hadoop-conf.py  # modifies 
+test/scripts/add-aws-to-hadoop-conf.py  # adds S3 to client Hadoop conf
 
 
 # 4. Remove data from a possible previous run of this script
@@ -60,7 +60,6 @@ eggo delete_all:config=$EGGO_HOME/test/registry/test-genotypes.json
 
 # 5. ETL the test data sets
 eggo provision
-test/jenkins/tag-my-instances.py
 eggo deploy_config
 eggo setup_master
 eggo setup_slaves
