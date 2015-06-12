@@ -21,7 +21,7 @@ import sys
 import json
 from shutil import rmtree
 from tempfile import mkdtemp
-from subprocess import check_call
+from subprocess import call, check_call
 
 from luigi import Task, Config
 from luigi.s3 import S3Target, S3FlagTarget, S3Client
@@ -176,10 +176,10 @@ def _dnload_to_local_upload_to_dfs(source, destination, compression):
             # ensure the dfs directory exists; this cmd may fail if the dir
             # already exists, but that's ok (though it shouldn't already exist)
             create_dir_cmd = '{hadoop_home}/bin/hadoop fs -mkdir -p {tmp_dfs_dir}'
-            check_call(create_dir_cmd.format(
-                           hadoop_home=eggo_config.get('worker_env', 'hadoop_home'),
-                           tmp_dfs_dir=tmp_staged_dir),
-                       shell=True)
+            call(create_dir_cmd.format(
+                     hadoop_home=eggo_config.get('worker_env', 'hadoop_home'),
+                     tmp_dfs_dir=tmp_staged_dir),
+                 shell=True)
             upload_cmd = '{hadoop_home}/bin/hadoop fs -put {tmp_local_file} {tmp_dfs_file}'
             check_call(upload_cmd.format(
                            hadoop_home=eggo_config.get('worker_env', 'hadoop_home'),
