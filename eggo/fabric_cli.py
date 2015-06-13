@@ -39,7 +39,7 @@ exec_ctx = eggo_config.get('execution', 'context')
 # "worker run"
 def wrun(*args, **kwargs):
     if exec_ctx == 'local':
-        return local(*args, **kwargs)
+        return run(*args, **kwargs)
     elif exec_ctx == 'spark_ec2':
         return run(*args, **kwargs)
     elif exec_ctx == 'director':
@@ -208,7 +208,7 @@ def install_adam(work_path, adam_home, maven_version, fork, branch):
     wrun('mkdir -p {0}'.format(mvn_path))
     with cd(mvn_path):
         wrun('wget http://apache.mesi.com.ar/maven/maven-3/{version}/binaries/'
-            'apache-maven-{version}-bin.tar.gz'.format(version=maven_version))
+             'apache-maven-{version}-bin.tar.gz'.format(version=maven_version))
         wrun('tar -xzf apache-maven-{0}-bin.tar.gz'.format(maven_version))
     # checkout adam
     if not exists(adam_home):
