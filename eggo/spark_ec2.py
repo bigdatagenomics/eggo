@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from fabric.api import local, prefix, run
+from fabric.api import local, prefix, run, execute
 
 from eggo.config import eggo_config
 

@@ -23,7 +23,7 @@ from cStringIO import StringIO
 
 from fabric.api import (
     task, env, execute, local, open_shell, put, cd, run, prefix, shell_env,
-    require, hosts, path, sudo)
+    require, hosts, path, sudo, lcd)
 from fabric.contrib.files import append, exists
 from boto.ec2 import connect_to_region
 from boto.s3.connection import S3Connection
