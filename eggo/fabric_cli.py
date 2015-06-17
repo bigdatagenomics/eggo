@@ -47,12 +47,20 @@ eggo_home = eggo_config.get('worker_env', 'eggo_home')
 maven_version = eggo_config.get('versions', 'maven')
 
 
+# the diff exec ctxs have diff permissions
 if exec_ctx == 'local':
     wrun = local
 elif exec_ctx == 'spark_ec2':
     wrun = run
 elif exec_ctx == 'director':
     wrun = sudo
+
+
+# fabric local doesn't respect cd() context manager
+if exec_ctx == 'local':
+    wcd = lcd
+else:
+    wcd = cd
 
 
 # set some global Fabric env settings
@@ -167,7 +175,7 @@ def install_adam(work_path, adam_home, maven_version, fork, branch):
     # dnload mvn
     mvn_path = os.path.join(work_path, 'apache-maven')
     wrun('mkdir -p {0}'.format(mvn_path))
-    with cd(mvn_path):
+    with wcd(mvn_path):
         wrun('wget http://apache.mesi.com.ar/maven/maven-3/{version}/binaries/'
              'apache-maven-{version}-bin.tar.gz'.format(version=maven_version))
         wrun('tar -xzf apache-maven-{0}-bin.tar.gz'.format(maven_version))
@@ -175,10 +183,10 @@ def install_adam(work_path, adam_home, maven_version, fork, branch):
     if not exists(adam_home):
         adam_parent = os.path.dirname(adam_home)
         wrun('mkdir -p {0}'.format(adam_parent))
-        with cd(adam_parent):
+        with wcd(adam_parent):
             wrun('git clone https://github.com/{0}/adam.git'.format(fork))
             if branch != 'master':
-                with cd('adam'):
+                with wcd('adam'):
                     wrun('git checkout origin/{branch}'.format(branch=branch))
     # build adam
     shell_vars = {}
@@ -188,7 +196,7 @@ def install_adam(work_path, adam_home, maven_version, fork, branch):
     shell_vars['MAVEN_OPTS'] = '-Xmx1024m -XX:MaxPermSize=512m'
     if exec_ctx == 'director':
         shell_vars['JAVA_HOME'] = '/usr/java/jdk1.7.0_67-cloudera'
-    with cd(adam_home):
+    with wcd(adam_home):
         with shell_env(**shell_vars):
             wrun('$M2/mvn clean package -DskipTests')
 
@@ -197,17 +205,13 @@ def install_eggo(work_path, eggo_home, fork, branch):
     if not exists(eggo_home):
         eggo_parent = os.path.dirname(eggo_home)
         wrun('mkdir -p {0}'.format(eggo_parent))
-        with cd(eggo_parent):
+        with wcd(eggo_parent):
             wrun('git clone https://github.com/{0}/eggo.git'.format(fork))
             if branch != 'master':
-                with cd('eggo'):
+                with wcd('eggo'):
                     wrun('git checkout origin/{0}'.format(branch))
-    if exec_ctx == 'local':
-        with lcd(eggo_home):
-            local('pip install .')
-    else:
-        with cd(eggo_home):
-            wrun('pip install .')
+    with wcd(eggo_home):
+        wrun('pip install .')
 
 
 def create_hdfs_users():
