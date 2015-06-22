@@ -23,12 +23,12 @@ from shutil import rmtree
 from tempfile import mkdtemp
 from subprocess import call, check_call
 
-from luigi import Task, Config
+from luigi import Task, Config, WrapperTask
 from luigi.s3 import S3Target, S3FlagTarget, S3Client
 from luigi.hdfs import HdfsClient, HdfsTarget
 from luigi.file import LocalTarget
 from luigi.hadoop import JobTask, HadoopJobRunner
-from luigi.parameter import Parameter
+from luigi.parameter import Parameter, BoolParameter
 
 from eggo.config import eggo_config, validate_toast_config
 from eggo.util import random_id, build_dest_filename
@@ -315,61 +315,101 @@ class DeleteDatasetTask(Task):
 
 class ADAMBasicTask(Task):
 
-    adam_command = Parameter()
-    allowed_file_formats = Parameter()
-    edition = 'basic'
+    copy_to_hdfs = BoolParameter(True, significant=False)
 
-    def requires(self):
-        return DownloadDatasetHadoopTask(
-            destination=ToastConfig().raw_data_url())
+    @property
+    def adam_command(self):
+        '''Override with specific ADAM command and additional args.
+
+        Return the string following `adam-submit`. Use self.input().path
+        to access the local HDFS source data.
+
+        Example:
+
+        @property
+        def adam_command(self):
+            return 'transform {source} {target}'.format(
+                source=self.self.input().path, target=self.output().path)
+        '''
+        raise NotImplementedError('Subclass must override self.adam_command to '
+                                  'return the command string for adam-submit')
 
     def run(self):
+        if self.copy_to_hdfs:
+            # 1. Copy the data from source (e.g. S3) to Hadoop's default filesystem
+            base, ext = os.path.splitext(self.input().path)
+            tmp_hadoop_path = '/tmp/{rand_id}{ext}'.format(rand_id=random_id(),
+                                                           ext=ext)
+            distcp_cmd = '{hadoop_home}/bin/hadoop distcp {source} {target}'.format(
+                hadoop_home=eggo_config.get('worker_env', 'hadoop_home'),
+                source=self.input().path,
+                target=tmp_hadoop_path)
+            check_call(distcp_cmd, shell=True)
+
+            # swap the tmp filepath into the original command
+            adam_command = self.adam_command.replace(self.input().path, tmp_hadoop_path)
+        else:
+            adam_command = self.adam_command
+
+        # 2. Run the adam-submit job
+        adam_cmd = ('{adam_home}/bin/adam-submit --master {spark_master} '
+                    '--executor-memory {executor_memory} '
+                    '{adam_command}').format(
+                        adam_home=eggo_config.get('worker_env', 'adam_home'),
+                        spark_master=eggo_config.get('worker_env', 'spark_master'),
+                        executor_memory=eggo_config.get('worker_env', 'executor_memory'),
+                        adam_command=adam_command)
+        check_call(adam_cmd, shell=True)
+
+        if self.copy_to_hdfs:
+            delete_tmp_cmd = '{hadoop_home}/bin/hadoop fs -rmr {tmp_file}'.format(
+                hadoop_home=eggo_config.get('worker_env', 'hadoop_home'),
+                tmp_file=tmp_hadoop_path)
+            check_call(delete_tmp_cmd, shell=True)
+
+
+class ConvertToADAMTask(ADAMBasicTask):
+
+    allowed_file_formats = Parameter()
+    edition = Parameter('basic')
+
+    @property
+    def adam_command(self):
+        if 'bam' in self.allowed_file_formats:
+            cmd_template = 'transform {source} {target}'
+        elif 'vcf' in self.allowed_file_formats:
+            cmd_template = 'vcf2adam {source} {target}'
+        return cmd_template.format(
+            source=self.input().path,
+            target=self.output().path)
+
+    def requires(self):
         format = ToastConfig().config['sources'][0]['format'].lower()
         if format not in self.allowed_file_formats:
             raise ValueError("Format '{0}' not in allowed formats {1}.".format(
                 format, self.allowed_file_formats))
 
-        # 1. Copy the data from source (e.g. S3) to Hadoop's default filesystem
-        tmp_hadoop_path = '/tmp/{rand_id}.{format}'.format(rand_id=random_id(),
-                                                           format=format)
-        distcp_cmd = '{hadoop_home}/bin/hadoop distcp {source} {target}'.format(
-            hadoop_home=eggo_config.get('worker_env', 'hadoop_home'),
-            source=ToastConfig().raw_data_url(), target=tmp_hadoop_path)
-        check_call(distcp_cmd, shell=True)
-
-        # 2. Run the adam-submit job
-        adam_cmd = ('{adam_home}/bin/adam-submit --master {spark_master} {adam_command} '
-                    '{source} {target}').format(
-                        adam_home=eggo_config.get('worker_env', 'adam_home'),
-                        spark_master=eggo_config.get('worker_env', 'spark_master'),
-                        adam_command=self.adam_command, source=tmp_hadoop_path,
-                        target=ToastConfig().edition_url(edition=self.edition))
-        check_call(adam_cmd, shell=True)
+        return DownloadDatasetHadoopTask(
+            destination=ToastConfig().raw_data_url())
 
     def output(self):
         return flag_target(ToastConfig().edition_url(edition=self.edition))
 
 
-class ADAMFlattenTask(Task):
+class ADAMFlattenTask(ADAMBasicTask):
 
-    adam_command = Parameter()
     allowed_file_formats = Parameter()
     source_edition = 'basic'
     edition = 'flat'
 
-    def requires(self):
-        return ADAMBasicTask(adam_command=self.adam_command,
-                             allowed_file_formats=self.allowed_file_formats)
+    @property
+    def adam_command(self):
+        return 'flatten {source} {target}'.format(
+            source=self.input().path, target=self.output().path)
 
-    def run(self):
-        adam_cmd = ('{adam_home}/bin/adam-submit --master {spark_master} flatten '
-                    '{source} {target}').format(
-                        adam_home=eggo_config.get('worker_env', 'adam_home'),
-                        spark_master=eggo_config.get('worker_env', 'spark_master'),
-                        source=ToastConfig().edition_url(
-                            edition=self.source_edition),
-                        target=ToastConfig().edition_url(edition=self.edition))
-        check_call(adam_cmd, shell=True)
+    def requires(self):
+        return ConvertToADAMTask(edition=self.source_edition,
+                                 allowed_file_formats=self.allowed_file_formats)
 
     def output(self):
         return flag_target(ToastConfig().edition_url(edition=self.edition))
@@ -381,13 +421,11 @@ class ToastTask(Task):
         return flag_target(ToastConfig().edition_url(edition=self.edition))
 
 
-class VCF2ADAMTask(Task):
+class VCF2ADAMTask(WrapperTask):
 
     def requires(self):
-        basic = ADAMBasicTask(adam_command='vcf2adam',
-                              allowed_file_formats=['vcf'])
-        flat = ADAMFlattenTask(adam_command='vcf2adam',
-                               allowed_file_formats=['vcf'])
+        basic = ConvertToADAMTask(allowed_file_formats=['vcf'])
+        flat = ADAMFlattenTask(allowed_file_formats=['vcf'])
         dependencies = [basic]
         conf = ToastConfig().config
         editions = conf['editions'] if 'editions' in conf else []
@@ -398,20 +436,12 @@ class VCF2ADAMTask(Task):
                 dependencies.append(flat)
         return dependencies
 
-    def run(self):
-        pass
 
-    def output(self):
-        pass
-
-
-class BAM2ADAMTask(Task):
+class BAM2ADAMTask(WrapperTask):
 
     def requires(self):
-        basic = ADAMBasicTask(adam_command='transform',
-                              allowed_file_formats=['sam', 'bam'])
-        flat = ADAMFlattenTask(adam_command='transform',
-                               allowed_file_formats=['sam', 'bam'])
+        basic = ConvertToADAMTask(allowed_file_formats=['sam', 'bam'])
+        flat = ADAMFlattenTask(allowed_file_formats=['sam', 'bam'])
         dependencies = [basic]
         conf = ToastConfig().config
         editions = conf['editions'] if 'editions' in conf else []
@@ -421,4 +451,3 @@ class BAM2ADAMTask(Task):
             elif edition == 'flat':
                 dependencies.append(flat)
         return dependencies
-
