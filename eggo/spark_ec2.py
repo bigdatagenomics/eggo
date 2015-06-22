@@ -22,10 +22,12 @@ from eggo.config import eggo_config
 def provision():
     provision_cmd = ('{spark_home}/ec2/spark-ec2 -k {ec2_key_pair} '
                      '-i {ec2_private_key_file} -s {slaves} -t {type_} '
-                     '-r {region} {zone_arg} '
+                     '-r {region} {zone_arg} {spot_price_arg} '
                      '--copy-aws-credentials launch {stack_name}')
     az = eggo_config.get('spark_ec2', 'availability_zone')
     zone_arg = '--zone {0}'.format(az) if az != '' else ''
+    spot_price = eggo_config.get('spark_ec2', 'spot_price')
+    spot_price_arg = '--spot-price {}'.format(spot_price) if spot_price != '' else ''
     interp_cmd = provision_cmd.format(
         spark_home=eggo_config.get('client_env', 'spark_home'),
         ec2_key_pair=eggo_config.get('aws', 'ec2_key_pair'),
@@ -34,6 +36,7 @@ def provision():
         type_=eggo_config.get('spark_ec2', 'instance_type'),
         region=eggo_config.get('spark_ec2', 'region'),
         zone_arg=zone_arg,
+        spot_price_arg=spot_price_arg,
         stack_name=eggo_config.get('spark_ec2', 'stack_name'))
     local(interp_cmd)
 
