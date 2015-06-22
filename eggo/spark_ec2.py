@@ -27,7 +27,7 @@ def provision():
     az = eggo_config.get('spark_ec2', 'availability_zone')
     zone_arg = '--zone {0}'.format(az) if az != '' else ''
     spot_price = eggo_config.get('spark_ec2', 'spot_price')
-    spot_price_arg = '--spot-price {}'.format(spot_price) if spot_price != '' else ''
+    spot_price_arg = '--spot-price {0}'.format(spot_price) if spot_price != '' else ''
     interp_cmd = provision_cmd.format(
         spark_home=eggo_config.get('client_env', 'spark_home'),
         ec2_key_pair=eggo_config.get('aws', 'ec2_key_pair'),
