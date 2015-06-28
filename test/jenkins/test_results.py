@@ -56,10 +56,10 @@ def test_genotypes(fs):
     assert len(listdir(os.path.join(toast_config.dataset_url(), 'bdg'))) == 2
 
     bdg_basic = listdir(toast_config.edition_url(format='bdg', edition='basic'))
-    assert ('part-r-00000.gz.parquet', 124989) in bdg_basic
+    assert ('part-r-00000.gz.parquet', 125497) in bdg_basic
     assert ('_SUCCESS', 0) in bdg_basic
     bdg_flat = listdir(toast_config.edition_url(format='bdg', edition='flat'))
-    assert ('part-r-00000.gz.parquet', 22035) in bdg_flat
+    assert ('part-r-00000.gz.parquet', 22458) in bdg_flat
     assert ('_SUCCESS', 0) in bdg_flat
     # TODO: test for _metadata and _common_metadata files?
 
