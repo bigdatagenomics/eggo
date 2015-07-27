@@ -1,4 +1,3 @@
-#! /usr/bin/env bash
 # Licensed to Big Data Genomics (BDG) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -15,24 +14,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO: weaken the requirements of setting these variables.  If eggo is pip-
-# installed in the future, then EGGO_HOME can default to the site-packages
-# install location.  If it's just an "end-user" looking to browse available
-# data sets etc., there may not be need for the user to have EGGO_CONF set
+import os
+import os.path as osp
 
-# required to get a pointer to the config/env templates
-if [ -z "$EGGO_HOME" ]; then
-	echo >&2 "EGGO_HOME is unset. Aborting."
-	exit 1
-fi
+from eggo.error import ConfigError
 
-# required as the global config for the eggo instance
-if [ -z "$EGGO_CONFIG" ]; then
-	echo >&2 "EGGO_CONFIG is unset. Aborting."
-	exit 1
-fi
 
-# Check if fabric is installed
-command -v fab >/dev/null 2>&1 || { echo >&2 "fab not found on PATH. Aborting."; exit 1; }
+def get_env_var(name):
+    if name not in os.environ:
+        raise ConfigError('{0} environment variable is not set'.format(name))
+    return os.environ[name]
 
-fab -f "$EGGO_HOME/eggo/fabric_cli.py" "$@"
+
+AWS_ACCESS_KEY_ID = get_env_var('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = get_env_var('AWS_SECRET_ACCESS_KEY')
+EC2_KEY_PAIR = get_env_var('EC2_KEY_PAIR')
+EC2_PRIVATE_KEY_FILE = get_env_var('EC2_PRIVATE_KEY_FILE')
+
+
+DEFAULT_DIRECTOR_CONF_PATH = osp.join(osp.dirname(__file__), 'aws.conf')
+DEFAULT_CF_TEMPLATE_PATH = osp.join(osp.dirname(__file__),
+                                    'cloudformation.template')

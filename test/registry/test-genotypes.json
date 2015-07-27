@@ -1,9 +1,0 @@
-{
-    "name": "test-genotypes",
-    "title": "Test 1000 Genomes Project VCF data",
-    "dag": "VCF2ADAMTask",
-    "editions": ["basic", "flat"],
-    "sources": [
-        {"format": "vcf", "compression": true, "url": "https://github.com/bigdatagenomics/eggo/raw/master/test/resources/chr22.small.vcf.gz"}
-    ]
-}

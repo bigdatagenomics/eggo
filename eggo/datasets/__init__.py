@@ -13,10 +13,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from pytest import fixture
-from luigi.hdfs import HdfsClient
-
-@fixture(scope='session')
-def fs():
-    return HdfsClient()

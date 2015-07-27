@@ -1,9 +1,0 @@
-{
-    "name": "test-alignments",
-    "title": "Test SAM data",
-    "dag": "BAM2ADAMTask",
-    "editions": ["basic", "flat"],
-    "sources": [
-        {"format": "sam", "compression": false, "url": "https://raw.githubusercontent.com/bigdatagenomics/adam/master/adam-core/src/test/resources/reads12.sam"}
-    ]
-}

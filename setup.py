@@ -31,9 +31,10 @@ setup(
     author_email='laserson@cloudera.com',
     url='https://github.com/bigdatagenomics/eggo',
     packages=find_packages(),
+    package_data={'eggo.cluster': ['*.template', '*.conf']},
     include_package_data=True,
-    scripts=['bin/eggo', 'bin/toaster.py'],
-    #install_requires=['fabric', 'luigi', 'boto'], # fails when using Cloudera Director, http://stackoverflow.com/questions/28443041/python-daemon-2-0-5-wont-install-with-pip
+    install_requires=['fabric', 'boto', 'click'],
+    entry_points={'console_scripts': ['eggo = eggo.cluster.cli:cli']},
     keywords=('bdg adam spark eggo genomics omics public data'),
     license='Apache License, Version 2.0',
     classifiers=[
@@ -41,5 +42,4 @@ setup(
         'Programming Language :: Python :: 2.6',
         'Programming Language :: Python :: 2.7'
     ],
-    zip_safe=False
-)
+    zip_safe=False)
