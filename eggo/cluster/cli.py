@@ -21,8 +21,8 @@ from eggo.cluster.config import (
     DEFAULT_DIRECTOR_CONF_PATH, DEFAULT_CF_TEMPLATE_PATH)
 
 @group(context_settings={'help_option_names': ['-h', '--help']})
-@option('--region', default='us-east-1', help='AWS Region')
-@option('--cf-stack-name', default='bdg-eggo',
+@option('--region', default='us-east-1', show_default=True, help='AWS Region')
+@option('--cf-stack-name', default='bdg-eggo', show_default=True,
         help='AWS Cloudformation Stack Name')
 @pass_context
 def cli(ctx, region, cf_stack_name):
@@ -31,19 +31,19 @@ def cli(ctx, region, cf_stack_name):
 
 
 @cli.command()
-@option('--availability-zone', default='us-east-1b',
+@option('--availability-zone', default='us-east-1b', show_default=True,
         help='AWS Availability Zone')
 @option('--cf-template-path', default=DEFAULT_CF_TEMPLATE_PATH,
-        help='Path to AWS Cloudformation Template')
-@option('--launcher-ami', default='ami-00a11e68',
+        show_default=True, help='Path to AWS Cloudformation Template')
+@option('--launcher-ami', default='ami-00a11e68', show_default=True,
         help='The AMI to use for the launcher node')
-@option('--launcher-instance-type', default='m3.medium',
+@option('--launcher-instance-type', default='m3.medium', show_default=True,
         help='The instance type to use for the launcher node')
 @option('--director-conf-path', default=DEFAULT_DIRECTOR_CONF_PATH,
-        help='Path to Director conf for AWS cloud')
-@option('--cluster-ami', default='ami-00a11e68',
+        show_default=True, help='Path to Director conf for AWS cloud')
+@option('--cluster-ami', default='ami-00a11e68', show_default=True,
         help='The AMI to use for the worker nodes')
-@option('-n', '--num-workers', default=3,
+@option('-n', '--num-workers', default=3, show_default=True,
         help='The total number of worker nodes to provision')
 @pass_obj
 def provision(obj, availability_zone, cf_template_path,
