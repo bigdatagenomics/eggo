@@ -183,7 +183,7 @@ def install_director_client():
     sudo('yum -y install cloudera-director-client')
 
 
-def create_launcher_instance(ec2_conn, cf_conn, cf_stack_name, launcher_ami,
+def create_launcher_instance(ec2_conn, cf_conn, stack_name, launcher_ami,
                              launcher_instance_type):
     launcher_instances = get_instances(ec2_conn, 'eggo_node_type', 'launcher')
     if len(launcher_instances) > 0:
@@ -194,8 +194,8 @@ def create_launcher_instance(ec2_conn, cf_conn, cf_stack_name, launcher_ami,
     print "Creating launcher instance."
     # see http://stackoverflow.com/questions/19029588/how-to-auto-assign-public-ip-to-ec2-instance-with-boto
     interface = NetworkInterfaceSpecification(
-        subnet_id=get_subnet_id(cf_conn, cf_stack_name),
-        groups=[get_security_group_id(cf_conn, cf_stack_name)],
+        subnet_id=get_subnet_id(cf_conn, stack_name),
+        groups=[get_security_group_id(cf_conn, stack_name)],
         associate_public_ip_address=True)
     interfaces = NetworkInterfaceCollection(interface)
     reservation = ec2_conn.run_instances(
@@ -205,9 +205,9 @@ def create_launcher_instance(ec2_conn, cf_conn, cf_stack_name, launcher_ami,
         network_interfaces=interfaces)
     launcher_instance = reservation.instances[0]
     
-    launcher_instance.add_tag('user', getuser())
+    launcher_instance.add_tag('owner', getuser())
     launcher_instance.add_tag('ec2_key_pair', EC2_KEY_PAIR)
-    launcher_instance.add_tag('eggo_cf_stack_name', cf_stack_name)
+    launcher_instance.add_tag('eggo_stack_name', stack_name)
     launcher_instance.add_tag('eggo_node_type', 'launcher')
     wait_for_instance_state(ec2_conn, launcher_instance)
     execute(install_director_client, hosts=[launcher_instance.ip_address])
@@ -222,6 +222,8 @@ def run_director_bootstrap(director_conf_path, region, cluster_ami,
     params = {'accessKeyId': AWS_ACCESS_KEY_ID,
               'secretAccessKey': AWS_SECRET_ACCESS_KEY,
               'region': region,
+              'stack_name': stack_name,
+              'owner': getuser(),
               'keyName': EC2_KEY_PAIR,
               'subnetId': get_subnet_id(cf_conn, stack_name),
               'securityGroupsIds': get_security_group_id(cf_conn, stack_name),
@@ -235,26 +237,26 @@ def run_director_bootstrap(director_conf_path, region, cluster_ami,
     run('cloudera-director bootstrap director.conf')
 
 
-def provision(region, availability_zone, cf_stack_name, cf_template_path,
+def provision(region, availability_zone, stack_name, cf_template_path,
               launcher_ami, launcher_instance_type, director_conf_path,
               cluster_ami, num_workers):
     start_time = datetime.now()
 
     # create cloudformation stack (VPC etc)
     cf_conn = create_cf_connection(region)
-    create_cf_stack(cf_conn, cf_stack_name, cf_template_path, availability_zone)
+    create_cf_stack(cf_conn, stack_name, cf_template_path, availability_zone)
 
     # create launcher instance
     ec2_conn = create_ec2_connection(region)
     launcher_instance = create_launcher_instance(
-        ec2_conn, cf_conn, cf_stack_name, launcher_ami, launcher_instance_type)
+        ec2_conn, cf_conn, stack_name, launcher_ami, launcher_instance_type)
 
     # run bootstrap on launcher
     execute(
         run_director_bootstrap,
         director_conf_path=director_conf_path, region=region,
         cluster_ami=cluster_ami, num_workers=num_workers,
-        stack_name=cf_stack_name, hosts=[launcher_instance.ip_address])
+        stack_name=stack_name, hosts=[launcher_instance.ip_address])
 
     end_time = datetime.now()
     print "Cluster has started. Took {t} minutes.".format(
@@ -262,11 +264,11 @@ def provision(region, availability_zone, cf_stack_name, cf_template_path,
 
 
 def list(region):
-    conn = create_ec2_connection(region)
-    print 'Launcher', get_launcher_instance(conn).ip_address
-    print 'Manager', get_manager_instance(conn).ip_address
-    print 'Master', get_master_instance(conn).ip_address
-    for instance in get_worker_instances(conn):
+    ec2_conn = create_ec2_connection(region)
+    print 'Launcher', get_launcher_instance(ec2_conn).ip_address
+    print 'Manager', get_manager_instance(ec2_conn).ip_address
+    print 'Master', get_master_instance(ec2_conn).ip_address
+    for instance in get_worker_instances(ec2_conn):
         print 'Worker', instance.ip_address
 
 
@@ -276,8 +278,8 @@ def get_worker_hosts(region):
 
 
 def login(region):
-    conn = create_ec2_connection(region)
-    hosts = [get_master_instance(conn).ip_address]
+    ec2_conn = create_ec2_connection(region)
+    hosts = [get_master_instance(ec2_conn).ip_address]
     execute(open_shell, hosts=hosts)
 
 
@@ -308,20 +310,21 @@ def run_director_terminate():
     run('cloudera-director terminate director.conf')
 
 
-def terminate_launcher_instance(conn):
-    launcher_instance = get_launcher_instance(conn)
+def terminate_launcher_instance(ec2_conn):
+    launcher_instance = get_launcher_instance(ec2_conn)
     launcher_instance.terminate()
-    wait_for_instance_state(conn, launcher_instance, 'terminated')
+    wait_for_instance_state(ec2_conn, launcher_instance, 'terminated')
 
 
-def teardown(region, cf_stack_name):
+def teardown(region, stack_name):
     # terminate Hadoop cluster (prompts for confirmation)
-    conn = create_ec2_connection(region)
-    execute(run_director_terminate, hosts=[get_launcher_instance(conn).ip_address])
+    ec2_conn = create_ec2_connection(region)
+    execute(run_director_terminate,
+            hosts=[get_launcher_instance(ec2_conn).ip_address])
 
     # terminate launcher instance
-    terminate_launcher_instance(conn)
+    terminate_launcher_instance(ec2_conn)
 
     # delete stack
     cf_conn = create_cf_connection(region)
-    delete_stack(cf_conn, cf_stack_name)
+    delete_stack(cf_conn, stack_name)

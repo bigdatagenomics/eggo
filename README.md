@@ -1,37 +1,124 @@
-# eggo
+# `eggo`
 
-Provides Parquet-formatted public 'omics datasets in S3 for easily using ADAM
-and the Hadoop stack (including Spark and Impala). Instead of acquiring and
-converting the data sets yourself, simply get them from the eggo S3 bucket:
+Eggo is two things:
+
+1. CLI for easily provisioning fully-functioning Hadoop clusters (CDH) using
+   Cloudera Director
+
+2. A set of Parquet-formatted public 'omics data sets in S3 for easily
+   performing integrative genomics on the Hadoop stack (including Spark and
+   Impala).
+
+Eggo includes all the of scripts for processing the data, including the
+necessary DDL statements to register the data sets with the Hive Metastore and
+make them accessible to Hive/Impala.
+
+At the moment, Eggo is geared specifically towards scaling up variant stores
+and related functionality (e.g., population genomics, clinical genomics)
+
+The pre-conerted data sets are hosted at a publicly available S3 bucket:
 
 ```
 s3://bdg-eggo
 ```
 
-Eggo also provides a command-line interface for easily provisioning Hadoop
-clusters in the cloud (built using Fabric) and also the necessary code to
-convert the data sets from the legacy formats into the Hadoop-friendly versions
-(built with Luigi).
+See the `datasets/` directory for a list of available data sets (with metadata
+conforming to the [DataPackage spec](http://dataprotocols.org/data-packages/)).
 
-## User interface
 
-Not implemented yet.
-
-### Getting started
+## Getting started
 
 ```
-git clone https://github.com/bigdatagenomics/eggo.git
-cd eggo
-python setup.py install
+pip install git+https://github.com/bigdatagenomics/eggo.git
 ```
 
-TODO: pip installable scripts for listing datasets ets.
+Eggo makes use of [Fabric](http://www.fabfile.org/),
+[Boto](https://boto.readthedocs.org/), and [Click](http://click.pocoo.org/).
 
-You need to [install](http://www.fabfile.org/installing.html) `fabric` too.
 
-## Developer/maintainer interface
+## `eggo` command -- provisioning clusters
 
-The `eggo` machinery uses Fabric and Luigi for its operation.
+Simply run `eggo` at the command line.  The `eggo` tool expects the following
+four environment variables:
+
+* `AWS_ACCESS_KEY_ID`
+
+* `AWS_SECRET_ACCESS_KEY`
+
+* `EC2_KEY_PAIR` -- the name of the EC2-registered key pair to use for instance
+   authentication
+
+* `EC2_PRIVATE_KEY_FILE` -- the local path to the corresponding private key
+
+```
+$ eggo -h
+Usage: eggo [OPTIONS] COMMAND [ARGS]...
+
+  eggo -- provisions Hadoop clusters in AWS using Cloudera Director
+
+Options:
+  -h, --help  Show this message and exit.
+
+Commands:
+  describe   Describe the EC2 instances in the cluster
+  login      Login to gateway node of cluster
+  provision  Provision a new cluster on AWS
+  setup      DOES NOTHING AT THE MOMENT
+  teardown   Tear down a cluster and stack on AWS
+```
+
+### `eggo provision`
+
+```
+$ eggo provision -h
+Usage: eggo provision [OPTIONS]
+
+  Provision a new cluster on AWS
+
+Options:
+  --region TEXT                  AWS Region  [default: us-east-1]
+  --stack-name TEXT              Stack name for CloudFormation and cluster
+                                 name  [default: bdg-eggo]
+  --availability-zone TEXT       AWS Availability Zone  [default: us-east-1b]
+  --cf-template-path TEXT        Path to AWS Cloudformation Template
+                                 [default: /usr/local/lib/python2.7/site-packa
+                                 ges/eggo-0.1.0.dev0-py2.7.egg/eggo/cluster/cl
+                                 oudformation.template]
+  --launcher-ami TEXT            The AMI to use for the launcher node
+                                 [default: ami-00a11e68]
+  --launcher-instance-type TEXT  The instance type to use for the launcher
+                                 node  [default: m3.medium]
+  --director-conf-path TEXT      Path to Director conf for AWS cloud
+                                 [default: /usr/local/lib/python2.7/site-packa
+                                 ges/eggo-0.1.0.dev0-py2.7.egg/eggo/cluster/aw
+                                 s.conf]
+  --cluster-ami TEXT             The AMI to use for the worker nodes
+                                 [default: ami-00a11e68]
+  -n, --num-workers INTEGER      The total number of worker nodes to provision
+                                 [default: 3]
+  -h, --help                     Show this message and exit.
+```
+
+
+## Eggo data sets
+
+### `datasets/`
+
+
+
+
+
+
+
+
+
+
+
+OLD OLD OLD OLD OLD OLD OLD OLD
+
+DELETE DELETE DELETE DELETE
+
+vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 
 ### `registry/`
 

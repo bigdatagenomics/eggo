@@ -20,17 +20,24 @@ import eggo.cluster.director as director
 from eggo.cluster.config import (
     DEFAULT_DIRECTOR_CONF_PATH, DEFAULT_CF_TEMPLATE_PATH)
 
+
+# reusable options
+option_region = option(
+    '--region', default='us-east-1', show_default=True, help='AWS Region')
+option_stack_name = option(
+    '--stack-name', default='bdg-eggo', show_default=True,
+    help='Stack name for CloudFormation and cluster name')
+
+
 @group(context_settings={'help_option_names': ['-h', '--help']})
-@option('--region', default='us-east-1', show_default=True, help='AWS Region')
-@option('--cf-stack-name', default='bdg-eggo', show_default=True,
-        help='AWS Cloudformation Stack Name')
-@pass_context
-def cli(ctx, region, cf_stack_name):
-    """eggo -- provisions Hadoop clusters in AWS using Cloudera Director."""
-    ctx.obj = {'region': region, 'cf_stack_name': cf_stack_name}
+def cli():
+    """eggo -- provisions Hadoop clusters in AWS using Cloudera Director"""
+    pass
 
 
 @cli.command()
+@option_region
+@option_stack_name
 @option('--availability-zone', default='us-east-1b', show_default=True,
         help='AWS Availability Zone')
 @option('--cf-template-path', default=DEFAULT_CF_TEMPLATE_PATH,
@@ -45,35 +52,38 @@ def cli(ctx, region, cf_stack_name):
         help='The AMI to use for the worker nodes')
 @option('-n', '--num-workers', default=3, show_default=True,
         help='The total number of worker nodes to provision')
-@pass_obj
-def provision(obj, availability_zone, cf_template_path,
+def provision(region, availability_zone, stack_name, cf_template_path,
               launcher_ami, launcher_instance_type,
               director_conf_path, cluster_ami, num_workers):
-    """provision a new cluster on AWS"""
+    """Provision a new cluster on AWS"""
     director.provision(
-        obj['region'], availability_zone, obj['cf_stack_name'],
-        cf_template_path, launcher_ami, launcher_instance_type,
-        director_conf_path, cluster_ami, num_workers)
+        region, availability_zone, stack_name, cf_template_path, launcher_ami,
+        launcher_instance_type, director_conf_path, cluster_ami, num_workers)
 
 
 @cli.command()
 def setup():
+    """DOES NOTHING AT THE MOMENT"""
     pass
 
 
 @cli.command()
-@pass_obj
-def teardown(obj):
-    """tear down a cluster on AWS"""
-    director.teardown(obj['region'], obj['cf_stack_name'])
+@option_region
+@option_stack_name
+def teardown(region, stack_name):
+    """Tear down a cluster and stack on AWS"""
+    director.teardown(region, cf_stack_name)
 
 
 @cli.command()
-def login(obj):
-    """login to gateway node of cluster"""
-    director.login(obj['region'])
+@option_region
+def login(region):
+    """Login to gateway node of cluster"""
+    director.login(region)
 
 
 @cli.command()
-def describe():
-    pass
+@option_region
+def describe(region):
+    """Describe the EC2 instances in the cluster"""
+    director.list(region)
