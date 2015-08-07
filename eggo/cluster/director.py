@@ -22,13 +22,17 @@ from getpass import getuser
 from tempfile import mkdtemp
 from datetime import datetime
 from cStringIO import StringIO
+from subprocess import Popen
+from contextlib import contextmanager
 
 import boto.ec2
 import boto.cloudformation
 from boto.ec2.networkinterface import (
     NetworkInterfaceCollection, NetworkInterfaceSpecification)
 from boto.exception import BotoServerError
-from fabric.api import sudo, local, run, execute, put, open_shell, env
+from fabric.api import (
+    sudo, local, run, execute, put, open_shell, env, parallel)
+from cm_api.api_client import ApiResource
 
 from eggo.cluster.config import (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
                                  EC2_KEY_PAIR, EC2_PRIVATE_KEY_FILE)
@@ -123,28 +127,31 @@ def create_ec2_connection(region):
     return boto.ec2.connect_to_region(region)
 
 
-def get_instances(ec2_conn, tag_key, tag_value=''):
-    rezzies = ec2_conn.get_all_reservations(
-        filters={'tag:' + tag_key: tag_value})
-    instances = itertools.chain.from_iterable([r.instances for r in rezzies])
+def get_tagged_instances(ec2_conn, tags):
+    filters = [('tag:' + k, v) for (k, v) in tags.iteritems()]
+    instances = ec2_conn.get_only_instances(filters=filters)
     return [i for i in instances
             if i.state not in ["shutting-down", "terminated"]]
 
 
-def get_launcher_instance(ec2_conn):
-    return get_instances(ec2_conn, 'eggo_node_type', 'launcher')[0]
+def get_launcher_instance(ec2_conn, stack_name):
+    return get_tagged_instances(ec2_conn, {'eggo_stack_name': stack_name,
+                                           'eggo_node_type': 'launcher'})[0]
 
 
-def get_manager_instance(ec2_conn):
-    return get_instances(ec2_conn, 'eggo_node_type', 'manager')[0]
+def get_manager_instance(ec2_conn, stack_name):
+    return get_tagged_instances(ec2_conn, {'eggo_stack_name': stack_name,
+                                           'eggo_node_type': 'manager'})[0]
 
 
-def get_worker_instances(ec2_conn):
-    return get_instances(ec2_conn, 'eggo_node_type', 'worker')
+def get_worker_instances(ec2_conn, stack_name):
+    return get_tagged_instances(ec2_conn, {'eggo_stack_name': stack_name,
+                                           'eggo_node_type': 'worker'})
 
 
-def get_master_instance(ec2_conn):
-    return get_instances(ec2_conn, 'eggo_node_type', 'master')[0]
+def get_master_instance(ec2_conn, stack_name):
+    return get_tagged_instances(ec2_conn, {'eggo_stack_name': stack_name,
+                                           'eggo_node_type': 'master'})[0]
 
 
 def wait_for_instance_state(ec2_conn, instance, state='running'):
@@ -185,7 +192,9 @@ def install_director_client():
 
 def create_launcher_instance(ec2_conn, cf_conn, stack_name, launcher_ami,
                              launcher_instance_type):
-    launcher_instances = get_instances(ec2_conn, 'eggo_node_type', 'launcher')
+    launcher_instances = get_tagged_instances(ec2_conn,
+                                              {'eggo_stack_name': stack_name,
+                                               'eggo_node_type': 'launcher'})
     if len(launcher_instances) > 0:
         print "Launcher instance ({instance}) already exists. Reusing.".format(
             instance=launcher_instances[0].ip_address)
@@ -258,33 +267,31 @@ def provision(region, availability_zone, stack_name, cf_template_path,
         cluster_ami=cluster_ami, num_workers=num_workers,
         stack_name=stack_name, hosts=[launcher_instance.ip_address])
 
+    # upgrade to Java 8
+    install_java_8(region, stack_name)
+
     end_time = datetime.now()
     print "Cluster has started. Took {t} minutes.".format(
         t=(end_time - start_time).seconds / 60)
 
 
-def list(region):
+def list(region, stack_name):
     ec2_conn = create_ec2_connection(region)
-    print 'Launcher', get_launcher_instance(ec2_conn).ip_address
-    print 'Manager', get_manager_instance(ec2_conn).ip_address
-    print 'Master', get_master_instance(ec2_conn).ip_address
-    for instance in get_worker_instances(ec2_conn):
+    print 'Launcher', get_launcher_instance(ec2_conn, stack_name).ip_address
+    print 'Manager', get_manager_instance(ec2_conn, stack_name).ip_address
+    print 'Master', get_master_instance(ec2_conn, stack_name).ip_address
+    for instance in get_worker_instances(ec2_conn, stack_name):
         print 'Worker', instance.ip_address
 
 
-def get_worker_hosts(region):
-    conn = create_ec2_connection(region)
-    return [i.ip_address for i in get_worker_instances(conn)]
-
-
-def login(region):
+def login(region, stack_name):
     ec2_conn = create_ec2_connection(region)
-    hosts = [get_master_instance(ec2_conn).ip_address]
+    hosts = [get_master_instance(ec2_conn, stack_name).ip_address]
     execute(open_shell, hosts=hosts)
 
 
 def web_proxy(instance, port):
-    local('ssh -i {private_key} -o UserKnownHostsFile=/dev/null '
+    local('ssh -nNT -i {private_key} -o UserKnownHostsFile=/dev/null '
           '-o StrictHostKeyChecking=no -L {port}:{private_ip}:{port} '
           'ec2-user@{public_ip}'.format(
               private_key=EC2_PRIVATE_KEY_FILE, port=port,
@@ -292,26 +299,18 @@ def web_proxy(instance, port):
               public_ip=instance.ip_address))
 
 
-def cm_web_proxy(region):
+def cm_web_proxy(region, stack_name):
     ec2_conn = create_ec2_connection(region)
-    instance = get_manager_instance(ec2_conn)
+    instance = get_manager_instance(ec2_conn, stack_name)
     web_proxy(instance, 7180)
-
-
-# def hue_web_proxy(region):
-#     web_proxy(region, 'master', 8888)
-
-
-# def yarn_web_proxy(region):
-#     web_proxy(region, 'master', 8088)
 
 
 def run_director_terminate():
     run('cloudera-director terminate director.conf')
 
 
-def terminate_launcher_instance(ec2_conn):
-    launcher_instance = get_launcher_instance(ec2_conn)
+def terminate_launcher_instance(ec2_conn, stack_name):
+    launcher_instance = get_launcher_instance(ec2_conn, stack_name)
     launcher_instance.terminate()
     wait_for_instance_state(ec2_conn, launcher_instance, 'terminated')
 
@@ -320,11 +319,92 @@ def teardown(region, stack_name):
     # terminate Hadoop cluster (prompts for confirmation)
     ec2_conn = create_ec2_connection(region)
     execute(run_director_terminate,
-            hosts=[get_launcher_instance(ec2_conn).ip_address])
+            hosts=[get_launcher_instance(ec2_conn, stack_name).ip_address])
 
     # terminate launcher instance
-    terminate_launcher_instance(ec2_conn)
+    terminate_launcher_instance(ec2_conn, stack_name)
 
     # delete stack
     cf_conn = create_cf_connection(region)
     delete_stack(cf_conn, stack_name)
+
+
+def install_java_8(region, stack_name):
+    # following general protocol for upgrading to JDK 1.8 here:
+    # http://www.cloudera.com/content/cloudera/en/documentation/core/v5-3-x/topics/cdh_cm_upgrading_to_jdk8.html
+    ec2_conn = create_ec2_connection(region)
+    manager_instance = get_manager_instance(ec2_conn, stack_name)
+    cluster_instances = (
+        get_worker_instances(ec2_conn, stack_name) +
+        [manager_instance, get_master_instance(ec2_conn, stack_name)])
+    cluster_hosts = [i.ip_address for i in cluster_instances]
+
+    # Connect to CM API
+    @contextmanager
+    def cm_tunnel():
+        tunnel_cmd = ('ssh -nNT -i {key} -o UserKnownHostsFile=/dev/null '
+                      '-o StrictHostKeyChecking=no -L 64999:{private}:7180 '
+                      'ec2-user@{public}'.format(
+                          key=EC2_PRIVATE_KEY_FILE,
+                          public=manager_instance.ip_address,
+                          private=manager_instance.private_ip_address))
+        p = Popen(tunnel_cmd, shell=True)
+        time.sleep(3)
+        try:
+            yield
+        finally:
+            p.terminate()
+
+    cm_api = ApiResource('localhost', username='admin', password='admin',
+                         server_port=64999, version=9)
+    cloudera_manager = cm_api.get_cloudera_manager()
+
+    with cm_tunnel():
+        # Stop Cloudera Management Service
+        mgmt_service = cloudera_manager.get_service()
+        mgmt_service.stop().wait()
+
+        # Stop cluster
+        clusters = cm_api.get_all_clusters()
+        cluster = clusters.objects[0]
+        cluster.stop().wait()
+
+    # Stop all Cloudera Manager Agents
+    @parallel
+    def stop_cm_agents():
+        sudo('service cloudera-scm-agent stop')
+    execute(stop_cm_agents, hosts=cluster_hosts)
+
+    # Stop the Cloudera Manager Server
+    def stop_cm_server():
+        sudo('service cloudera-scm-server stop')
+    execute(stop_cm_server, hosts=[manager_instance.ip_address])
+
+    # Cleanup other Java versions and install JDK 1.8
+    @parallel
+    def swap_jdks():
+        sudo('rpm -qa | grep jdk | xargs rpm -e')
+        sudo('rm -rf /usr/java/jdk1.6*')
+        sudo('rm -rf /usr/java/jdk1.7*')
+        run('wget -O jdk-8-linux-x64.rpm --no-cookies --no-check-certificate '
+            '--header "Cookie: oraclelicense=accept-securebackup-cookie" '
+            'http://download.oracle.com/otn-pub/java/jdk/8u51-b16/'
+            'jdk-8u51-linux-x64.rpm')
+        sudo('yum install -y jdk-8-linux-x64.rpm')
+    execute(swap_jdks, hosts=cluster_hosts)
+
+    # Start the Cloudera Manager Server
+    def start_cm_server():
+        sudo('service cloudera-scm-server start')
+    execute(start_cm_server, hosts=[manager_instance.ip_address])
+
+    # Start all Cloudera Manager Agents
+    @parallel
+    def start_cm_agents():
+        sudo('service cloudera-scm-agent start')
+    execute(start_cm_agents, hosts=cluster_hosts)
+
+    with cm_tunnel():
+        # Start the cluster and the mgmt service
+        cluster.start().wait()
+        mgmt_service.start().wait()

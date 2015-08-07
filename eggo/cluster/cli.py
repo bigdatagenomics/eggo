@@ -62,7 +62,7 @@ def provision(region, availability_zone, stack_name, cf_template_path,
 
 
 @cli.command()
-def setup():
+def config_cluster():
     """DOES NOTHING AT THE MOMENT"""
     pass
 
@@ -72,18 +72,28 @@ def setup():
 @option_stack_name
 def teardown(region, stack_name):
     """Tear down a cluster and stack on AWS"""
-    director.teardown(region, cf_stack_name)
+    director.teardown(region, stack_name)
 
 
 @cli.command()
 @option_region
-def login(region):
+@option_stack_name
+def login(region, stack_name):
     """Login to gateway node of cluster"""
-    director.login(region)
+    director.login(region, stack_name)
 
 
 @cli.command()
 @option_region
-def describe(region):
+@option_stack_name
+def describe(region, stack_name):
     """Describe the EC2 instances in the cluster"""
-    director.list(region)
+    director.list(region, stack_name)
+
+
+@cli.command()
+@option_region
+@option_stack_name
+def cm_web_proxy(region, stack_name):
+    """Set up ssh tunnel to Cloudera Manager web UI on local port 7180"""
+    director.cm_web_proxy(region, stack_name)

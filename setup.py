@@ -33,7 +33,7 @@ setup(
     packages=find_packages(),
     package_data={'eggo.cluster': ['*.template', '*.conf']},
     include_package_data=True,
-    install_requires=['fabric', 'boto', 'click'],
+    install_requires=['fabric', 'boto', 'click', 'cm_api'],
     entry_points={'console_scripts': ['eggo = eggo.cluster.cli:cli']},
     keywords=('bdg adam spark eggo genomics omics public data'),
     license='Apache License, Version 2.0',
