@@ -1,215 +1,106 @@
 {
-  "AWSTemplateFormatVersion": "2010-09-09",
-  "Description": "This template creates a VPC infrastructure for a single-AZ, single public subnet deployment of CDH",
-  "Parameters": {
-    "KeyPairName": {
-      "Type": "String"
-    },
-    "DMZCIDR": {
-      "Type": "String",
-      "Default": "10.1.1.0/24"
-    },
-    "VPCCIDR": {
-      "Type": "String",
-      "Default": "10.1.0.0/16"
-    },
-    "AZ": {
-      "Type": "String",
-      "Default": "us-east-1b"
-    },
-    "DomainDNSName": {
-      "Type": "String",
-      "Default": "ec2.internal"
-    }
-  },
-  "Resources": {
-    "VPC": {
-      "Type": "AWS::EC2::VPC",
-      "Properties": {
-        "CidrBlock": {
-          "Ref": "VPCCIDR"
-        },
-        "EnableDnsSupport": "True",
-        "EnableDnsHostnames": "True",
-        "Tags": [
-          {
-            "Key": "Application",
-            "Value": {
-              "Ref": "AWS::StackName"
-            }
-          },
-          {
-            "Key": "Network",
-            "Value": "Public"
-          }
-        ]
-      }
-    },
-    "DHCPOptions": {
-      "Type": "AWS::EC2::DHCPOptions",
-      "Properties": {
-        "DomainName": {
-          "Ref": "DomainDNSName"
-        },
-        "DomainNameServers": [
-          "AmazonProvidedDNS"
-        ]
-      }
-    },
-    "VPCDHCPOptionsAssociation": {
-      "Type": "AWS::EC2::VPCDHCPOptionsAssociation",
-      "Properties": {
-        "VpcId": {
-          "Ref": "VPC"
-        },
-        "DhcpOptionsId": {
-          "Ref": "DHCPOptions"
-        }
-      }
-    },
-    "DMZSubnet": {
-      "Type": "AWS::EC2::Subnet",
-      "Properties": {
-        "VpcId": {
-          "Ref": "VPC"
-        },
-        "CidrBlock": {
-          "Ref": "DMZCIDR"
-        },
-        "AvailabilityZone": {
-          "Ref": "AZ"
-        },
-        "Tags": [
-          {
-            "Key": "Application",
-            "Value": {
-              "Ref": "AWS::StackName"
-            }
-          },
-          {
-            "Key": "Network",
-            "Value": "Public"
-          },
-          {
-            "Key": "Role",
-            "Value": "DMZ Subnet"
-          }
-        ]
-      }
-    },
-    "InternetGateway": {
-      "Type": "AWS::EC2::InternetGateway",
-      "Properties": {
-        "Tags": [
-          {
-            "Key": "Application",
-            "Value": {
-              "Ref": "AWS::StackName"
-            }
-          },
-          {
-            "Key": "Network",
-            "Value": "Public"
-          }
-        ]
-      }
-    },
-    "ClusterSG": {
-      "Type": "AWS::EC2::SecurityGroup",
-      "Properties": {
-        "GroupDescription": "Cloudera security group",
-        "SecurityGroupIngress": [
-          {
-            "IpProtocol": "tcp",
-            "FromPort": "0",
-            "ToPort": "65535",
-            "CidrIp": "0.0.0.0/0"
-          },
-          {
-            "IpProtocol": "icmp",
-            "FromPort": "-1",
-            "ToPort": "-1",
-            "CidrIp": "0.0.0.0/0"
-          }
-        ],
-        "VpcId": {
-          "Ref": "VPC"
-        }
-      }
-    },
-    "AttachGateway": {
-      "Type": "AWS::EC2::VPCGatewayAttachment",
-      "Properties": {
-        "VpcId": {
-          "Ref": "VPC"
-        },
-        "InternetGatewayId": {
-          "Ref": "InternetGateway"
-        }
-      }
-    },
-    "DMZRouteTable": {
-      "Type": "AWS::EC2::RouteTable",
-      "Properties": {
-        "VpcId": {
-          "Ref": "VPC"
-        },
-        "Tags": [
-          {
-            "Key": "Application",
-            "Value": {
-              "Ref": "AWS::StackName"
-            }
-          },
-          {
-            "Key": "Network",
-            "Value": "DMZ"
-          }
-        ]
-      }
-    },
-    "DMZRoute": {
-      "Type": "AWS::EC2::Route",
-      "Properties": {
-        "RouteTableId": {
-          "Ref": "DMZRouteTable"
-        },
-        "DestinationCidrBlock": "0.0.0.0/0",
-        "GatewayId": {
-          "Ref": "InternetGateway"
-        }
-      }
-    },
-    "DMZSubnetRouteTableAssociation": {
-      "Type": "AWS::EC2::SubnetRouteTableAssociation",
-      "Properties": {
-        "SubnetId": {
-          "Ref": "DMZSubnet"
-        },
-        "RouteTableId": {
-          "Ref": "DMZRouteTable"
-        }
-      }
-    }
-  },
-  "Outputs": {
-    "VPC": {
-      "Value": {
-        "Ref": "VPC"
-      },
-      "Description": "VPC Identifier"
-    },
-    "DMZSubnet": {
-      "Value": {
-        "Ref": "DMZSubnet"
-      },
-      "Description": "Subnet ID for DMZ"
-    },
-    "SecurityGroup": {
-      "Value": {
-        "Ref": "ClusterSG"
-      },
-      "Description": "Cluster security group"
-    }
-  }
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template creates a VPC infrastructure for a single-AZ, single public subnet deployment of CDH",
+    "Parameters": {
+        "KeyPairName": {"Type": "String"},
+        "DMZCIDR": {"Type": "String", "Default": "10.1.1.0/24"},
+        "VPCCIDR": {"Type": "String", "Default": "10.1.0.0/16"},
+        "AZ": {"Type": "String", "Default": "us-east-1b"},
+        "DomainDNSName": {"Type": "String", "Default": "ec2.internal"}},
+    "Resources": {
+        "VPC": {
+            "Type": "AWS::EC2::VPC",
+            "Properties": {
+                "CidrBlock": {"Ref": "VPCCIDR"},
+                "EnableDnsSupport": "True",
+                "EnableDnsHostnames": "True",
+                "Tags": [
+                    {"Key": "Application", "Value": {"Ref": "AWS::StackName"}},
+                    {"Key": "Network", "Value": "Public"}]}},
+        "DHCPOptions": {
+            "Type": "AWS::EC2::DHCPOptions",
+            "Properties": {
+                "DomainName": {"Ref": "DomainDNSName"},
+                "DomainNameServers": ["AmazonProvidedDNS"]}},
+        "VPCDHCPOptionsAssociation": {
+            "Type": "AWS::EC2::VPCDHCPOptionsAssociation",
+            "Properties": {
+                "VpcId": {"Ref": "VPC"},
+                "DhcpOptionsId": {"Ref": "DHCPOptions"}}},
+        "DMZSubnet": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {"Ref": "VPC"},
+                "CidrBlock": {"Ref": "DMZCIDR"},
+                "AvailabilityZone": {"Ref": "AZ"},
+                "Tags": [
+                    {"Key": "Application", "Value": {"Ref": "AWS::StackName"}},
+                    {"Key": "Network", "Value": "Public"},
+                    {"Key": "Role", "Value": "DMZ Subnet"}]}},
+        "InternetGateway": {
+            "Type": "AWS::EC2::InternetGateway",
+            "Properties": {
+                "Tags": [
+                    {"Key": "Application", "Value": {"Ref": "AWS::StackName"}},
+                    {"Key": "Network", "Value": "Public"}]}},
+        "ClusterSG": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Cloudera security group",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "-1",
+                        "FromPort": "0",
+                        "ToPort": "65535",
+                        "CidrIp": {"Ref": "VPCCIDR"}
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ],
+                "SecurityGroupEgress": [
+                    {
+                        "IpProtocol": "-1",
+                        "FromPort": "0",
+                        "ToPort": "65535",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ],
+                "VpcId": {"Ref": "VPC"}}},
+        "AttachGateway": {
+            "Type": "AWS::EC2::VPCGatewayAttachment",
+            "Properties": {
+                "VpcId": {"Ref": "VPC"},
+                "InternetGatewayId": {"Ref": "InternetGateway"}}},
+        "DMZRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {"Ref": "VPC"},
+                "Tags": [
+                    {"Key": "Application", "Value": {"Ref": "AWS::StackName"}},
+                    {"Key": "Network", "Value": "DMZ"}]}},
+        "DMZRoute": {
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {"Ref": "DMZRouteTable"},
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {"Ref": "InternetGateway"}}},
+        "DMZSubnetRouteTableAssociation": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {"Ref": "DMZSubnet"},
+                "RouteTableId": {"Ref": "DMZRouteTable"}}}},
+    "Outputs": {
+        "VPC": {
+            "Value": {"Ref": "VPC"},
+            "Description": "VPC Identifier"},
+        "DMZSubnet": {
+            "Value": {"Ref": "DMZSubnet"},
+            "Description": "Subnet ID for DMZ"},
+        "SecurityGroup": {
+            "Value": {"Ref": "ClusterSG"},
+            "Description": "Cluster security group"}}
 }
