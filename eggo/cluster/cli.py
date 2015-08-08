@@ -62,9 +62,11 @@ def provision(region, availability_zone, stack_name, cf_template_path,
 
 
 @cli.command()
-def config_cluster():
-    """DOES NOTHING AT THE MOMENT"""
-    pass
+@option_region
+@option_stack_name
+def config_cluster(region, stack_name):
+    """Configure cluster for genomics, incl. ADAM, OpenCB, Quince, etc"""
+    director.config_cluster(region, stack_name)
 
 
 @cli.command()

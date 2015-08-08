@@ -31,7 +31,7 @@ from boto.ec2.networkinterface import (
     NetworkInterfaceCollection, NetworkInterfaceSpecification)
 from boto.exception import BotoServerError
 from fabric.api import (
-    sudo, local, run, execute, put, open_shell, env, parallel)
+    sudo, local, run, execute, put, open_shell, env, parallel, cd)
 from cm_api.api_client import ApiResource
 
 from eggo.cluster.config import (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
@@ -267,9 +267,6 @@ def provision(region, availability_zone, stack_name, cf_template_path,
         cluster_ami=cluster_ami, num_workers=num_workers,
         stack_name=stack_name, hosts=[launcher_instance.ip_address])
 
-    # upgrade to Java 8
-    install_java_8(region, stack_name)
-
     end_time = datetime.now()
     print "Cluster has started. Took {t} minutes.".format(
         t=(end_time - start_time).seconds / 60)
@@ -408,3 +405,91 @@ def install_java_8(region, stack_name):
         # Start the cluster and the mgmt service
         cluster.start().wait()
         mgmt_service.start().wait()
+
+
+def install_dev_tools():
+    sudo("yum groupinstall -y 'Development Tools'")
+    sudo('yum install -y cmake xz-devel ncurses ncurses-devel')
+    sudo('yum install -y zlib zlib-devel snappy snappy-devel')
+
+
+def install_git():
+    sudo('yum install -y git')
+
+
+def install_maven(version='3.3.3'):
+    url = ('http://apache.mesi.com.ar/maven/maven-3/{0}/binaries/'
+           'apache-maven-{0}-bin.tar.gz'.format(version))
+    run('wget {0}'.format(url))
+    run('tar -xzf apache-maven-{0}-bin.tar.gz'.format(version))
+    append('/home/ec2-user/.bash_profile',
+           'export PATH=/home/ec2-user/apache-maven-{0}/bin:$PATH')
+
+
+def install_adam(fork='bigdatagenomics', branch='master'):
+    run('git clone https://github.com/{0}/adam.git'.format(fork))
+    with cd('adam'):
+        if branch != 'master':
+            run('git checkout origin/{0}'.format(branch))
+        run('mvn clean package -DskipTests')
+
+
+def install_kite(fork='kite-sdk', branch='master'):
+    raise NotImplementedError()
+    run('git clone https://github.com/{0}/kite.git'.format(fork))
+    with cd('kite'):
+        if branch != 'master':
+            run('git checkout origin/{0}'.format(branch))
+        run('mvn clean install -DskipTests')
+
+
+def install_opencb_ga4gh(fork='opencb', branch='master'):
+    run('git clone https://github.com/{0}/ga4gh.git'.format(fork))
+    with cd('ga4gh'):
+        if branch != 'master':
+            run('git checkout origin/{0}'.format(branch))
+        run('mvn clean install -DskipTests')
+
+
+def install_opencb_java_common(fork='opencb', branch='develop'):
+    run('git clone https://github.com/{0}/java-common-libs.git'.format(fork))
+    with cd('java-common-libs'):
+        if branch != 'develop':
+            run('git checkout origin/{0}'.format(branch))
+        run('mvn clean install -DskipTests')
+
+
+def install_opencb_biodata(fork='opencb', branch='develop'):
+    run('git clone https://github.com/{0}/biodata.git'.format(fork))
+    with cd('biodata'):
+        if branch != 'develop':
+            run('git checkout origin/{0}'.format(branch))
+        run('mvn clean install -DskipTests')
+
+
+def install_opencb_hpg_bigdata(fork='opencb', branch='develop'):
+    run('git clone https://github.com/{0}/hpg-bigdata.git'.format(fork))
+    with cd('hpg-bigdata'):
+        if branch != 'develop':
+            run('git checkout origin/{0}'.format(branch))
+        run('mvn clean package -DskipTests')
+
+
+def install_quince(fork='cloudera', branch='master'):
+    run('git clone https://github.com/{0}/quince.git'.format(fork))
+    with cd('quince'):
+        if branch != 'master':
+            run('git checkout origin/{0}'.format(branch))
+        run('mvn clean package -DskipTests')
+
+
+def config_cluster(region, stack_name):
+    master_host = get_master_instance(region, stack_name).ip_address
+    install_java_8(region, stack_name)
+    execute(install_dev_tools, hosts=[master_host])
+    execute(install_git, hosts=[master_host])
+    execute(install_maven, hosts=[master_host])
+    execute(install_adam, hosts=[master_host])
+    # execute(install_kite, fork='tomwhite',
+    #         branch='KITE-1032-sort-in-partition', hosts=[master_host])
+    execute(install_quince, hosts=[master_host])
