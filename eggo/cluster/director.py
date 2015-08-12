@@ -22,7 +22,7 @@ from getpass import getuser
 from tempfile import mkdtemp
 from datetime import datetime
 from cStringIO import StringIO
-from subprocess import Popen
+from subprocess import Popen, check_call, CalledProcessError
 from contextlib import contextmanager
 
 import boto.ec2
@@ -32,8 +32,10 @@ from boto.ec2.networkinterface import (
 from boto.exception import BotoServerError
 from fabric.api import (
     sudo, local, run, execute, put, open_shell, env, parallel, cd)
+from fabric.contrib.files import append
 from cm_api.api_client import ApiResource
 
+from eggo.error import EggoError
 from eggo.cluster.config import (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
                                  EC2_KEY_PAIR, EC2_PRIVATE_KEY_FILE)
 
@@ -281,9 +283,16 @@ def list(region, stack_name):
         print 'Worker', instance.ip_address
 
 
-def login(region, stack_name):
+def login(region, stack_name, node):
     ec2_conn = create_ec2_connection(region)
-    hosts = [get_master_instance(ec2_conn, stack_name).ip_address]
+    if node == 'master':
+        hosts = [get_master_instance(ec2_conn, stack_name).ip_address]
+    elif node == 'manager':
+        hosts = [get_manager_instance(ec2_conn, stack_name).ip_address]
+    elif node == 'launcher':
+        hosts = [get_launcher_instance(ec2_conn, stack_name).ip_address]
+    else:
+        raise EggoError('"{0}" is not a valid node type'.format(node))
     execute(open_shell, hosts=hosts)
 
 
@@ -326,6 +335,33 @@ def teardown(region, stack_name):
     delete_stack(cf_conn, stack_name)
 
 
+@contextmanager
+def tunnel(instance, local_port, remote_port):
+    tunnel_cmd = ('ssh -nNT -i {key} -o UserKnownHostsFile=/dev/null '
+                  '-o StrictHostKeyChecking=no -L {local}:{private}:{remote} '
+                  'ec2-user@{public}'.format(
+                      key=EC2_PRIVATE_KEY_FILE, public=instance.ip_address,
+                      private=instance.private_ip_address, local=local_port,
+                      remote=remote_port))
+    p = Popen(tunnel_cmd, shell=True)
+    # ssh take a bit to open up the connection, so we wait until we get a
+    # successful curl command to the local port
+    print('Attempting to connect through SSH tunnel; may take a few attempts')
+    start_time = datetime.now()
+    while True:
+        try:
+            check_call('curl http://localhost:{0}'.format(local_port),
+                       shell=True)
+            # only reach this point if the curl cmd succeeded.
+            break
+        except CalledProcessError:
+            _sleep(start_time)
+    try:
+        yield
+    finally:
+        p.terminate()
+
+
 def install_java_8(region, stack_name):
     # following general protocol for upgrading to JDK 1.8 here:
     # http://www.cloudera.com/content/cloudera/en/documentation/core/v5-3-x/topics/cdh_cm_upgrading_to_jdk8.html
@@ -337,31 +373,18 @@ def install_java_8(region, stack_name):
     cluster_hosts = [i.ip_address for i in cluster_instances]
 
     # Connect to CM API
-    @contextmanager
-    def cm_tunnel():
-        tunnel_cmd = ('ssh -nNT -i {key} -o UserKnownHostsFile=/dev/null '
-                      '-o StrictHostKeyChecking=no -L 64999:{private}:7180 '
-                      'ec2-user@{public}'.format(
-                          key=EC2_PRIVATE_KEY_FILE,
-                          public=manager_instance.ip_address,
-                          private=manager_instance.private_ip_address))
-        p = Popen(tunnel_cmd, shell=True)
-        time.sleep(3)
-        try:
-            yield
-        finally:
-            p.terminate()
-
     cm_api = ApiResource('localhost', username='admin', password='admin',
                          server_port=64999, version=9)
     cloudera_manager = cm_api.get_cloudera_manager()
 
-    with cm_tunnel():
+    with tunnel(manager_instance, 64999, 7180):
         # Stop Cloudera Management Service
+        print "Stopping Cloudera Management Service"
         mgmt_service = cloudera_manager.get_service()
         mgmt_service.stop().wait()
 
         # Stop cluster
+        print "Stopping the cluster"
         clusters = cm_api.get_all_clusters()
         cluster = clusters.objects[0]
         cluster.stop().wait()
@@ -388,6 +411,8 @@ def install_java_8(region, stack_name):
             'http://download.oracle.com/otn-pub/java/jdk/8u51-b16/'
             'jdk-8u51-linux-x64.rpm')
         sudo('yum install -y jdk-8-linux-x64.rpm')
+        append('/home/ec2-user/.bash_profile',
+               'export JAVA_HOME=`find /usr/java -name "jdk1.8*"`')
     execute(swap_jdks, hosts=cluster_hosts)
 
     # Start the Cloudera Manager Server
@@ -401,9 +426,13 @@ def install_java_8(region, stack_name):
         sudo('service cloudera-scm-agent start')
     execute(start_cm_agents, hosts=cluster_hosts)
 
-    with cm_tunnel():
+    with tunnel(manager_instance, 64999, 7180):
         # Start the cluster and the mgmt service
+        print "Starting the cluster"
         cluster.start().wait()
+        print "Starting the Cloudera Management Service"
+        cloudera_manager = cm_api.get_cloudera_manager()
+        mgmt_service = cloudera_manager.get_service()
         mgmt_service.start().wait()
 
 
@@ -423,7 +452,8 @@ def install_maven(version='3.3.3'):
     run('wget {0}'.format(url))
     run('tar -xzf apache-maven-{0}-bin.tar.gz'.format(version))
     append('/home/ec2-user/.bash_profile',
-           'export PATH=/home/ec2-user/apache-maven-{0}/bin:$PATH')
+           'export PATH=/home/ec2-user/apache-maven-{0}/bin:$PATH'.format(
+               version))
 
 
 def install_adam(fork='bigdatagenomics', branch='master'):
@@ -432,15 +462,6 @@ def install_adam(fork='bigdatagenomics', branch='master'):
         if branch != 'master':
             run('git checkout origin/{0}'.format(branch))
         run('mvn clean package -DskipTests')
-
-
-def install_kite(fork='kite-sdk', branch='master'):
-    raise NotImplementedError()
-    run('git clone https://github.com/{0}/kite.git'.format(fork))
-    with cd('kite'):
-        if branch != 'master':
-            run('git checkout origin/{0}'.format(branch))
-        run('mvn clean install -DskipTests')
 
 
 def install_opencb_ga4gh(fork='opencb', branch='master'):
@@ -472,7 +493,14 @@ def install_opencb_hpg_bigdata(fork='opencb', branch='develop'):
     with cd('hpg-bigdata'):
         if branch != 'develop':
             run('git checkout origin/{0}'.format(branch))
-        run('mvn clean package -DskipTests')
+        run('./build.sh')
+
+
+def install_opencb(hosts):
+    execute(install_opencb_ga4gh, hosts=hosts)
+    execute(install_opencb_java_common, hosts=hosts)
+    execute(install_opencb_biodata, hosts=hosts)
+    execute(install_opencb_hpg_bigdata, hosts=hosts)
 
 
 def install_quince(fork='cloudera', branch='master'):
@@ -484,12 +512,19 @@ def install_quince(fork='cloudera', branch='master'):
 
 
 def config_cluster(region, stack_name):
-    master_host = get_master_instance(region, stack_name).ip_address
+    start_time = datetime.now()
+
+    ec2_conn = create_ec2_connection(region)
+    master_host = get_master_instance(ec2_conn, stack_name).ip_address
+
     install_java_8(region, stack_name)
     execute(install_dev_tools, hosts=[master_host])
     execute(install_git, hosts=[master_host])
     execute(install_maven, hosts=[master_host])
     execute(install_adam, hosts=[master_host])
-    # execute(install_kite, fork='tomwhite',
-    #         branch='KITE-1032-sort-in-partition', hosts=[master_host])
+    install_opencb([master_host])
     execute(install_quince, hosts=[master_host])
+
+    end_time = datetime.now()
+    print "Cluster configured. Took {t} minutes.".format(
+        t=(end_time - start_time).seconds / 60)

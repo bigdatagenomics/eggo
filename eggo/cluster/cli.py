@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from click import group, option, pass_context, pass_obj
+from click import group, option, Choice
 
 import eggo.cluster.director as director
 from eggo.cluster.config import (
@@ -80,9 +80,12 @@ def teardown(region, stack_name):
 @cli.command()
 @option_region
 @option_stack_name
-def login(region, stack_name):
-    """Login to gateway node of cluster"""
-    director.login(region, stack_name)
+@option('-n', '--node', default='master', show_default=True,
+        type=Choice(['master', 'manager', 'launcher']),
+        help='The node to login to')
+def login(region, stack_name, node):
+    """Login to the cluster"""
+    director.login(region, stack_name, node)
 
 
 @cli.command()
@@ -99,3 +102,16 @@ def describe(region, stack_name):
 def cm_web_proxy(region, stack_name):
     """Set up ssh tunnel to Cloudera Manager web UI on local port 7180"""
     director.cm_web_proxy(region, stack_name)
+
+
+@cli.command()
+@option_region
+@option_stack_name
+def get_director_log(region, stack_name):
+    """DEBUG: get the Director application log from the launcher instance"""
+    from fabric.api import execute, get
+    ec2_conn = director.create_ec2_connection(region)
+    hosts = [director.get_launcher_instance(ec2_conn, stack_name).ip_address]
+    execute(
+        get, hosts=hosts, local_path='application.log',
+        remote_path='/home/ec2-user/.cloudera-director/logs/application.log')
