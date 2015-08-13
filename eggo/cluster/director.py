@@ -32,7 +32,7 @@ from boto.ec2.networkinterface import (
 from boto.exception import BotoServerError
 from fabric.api import (
     sudo, local, run, execute, put, open_shell, env, parallel, cd)
-from fabric.contrib.files import append
+from fabric.contrib.files import append, exists
 from cm_api.api_client import ApiResource
 
 from eggo.error import EggoError
@@ -296,19 +296,39 @@ def login(region, stack_name, node):
     execute(open_shell, hosts=hosts)
 
 
-def web_proxy(instance, port):
-    local('ssh -nNT -i {private_key} -o UserKnownHostsFile=/dev/null '
-          '-o StrictHostKeyChecking=no -L {port}:{private_ip}:{port} '
-          'ec2-user@{public_ip}'.format(
-              private_key=EC2_PRIVATE_KEY_FILE, port=port,
-              private_ip=instance.private_ip_address,
-              public_ip=instance.ip_address))
+def start_web_proxy(public_ip, private_ip, port):
+    p = Popen('ssh -nNT -i {private_key} -o UserKnownHostsFile=/dev/null '
+              '-o StrictHostKeyChecking=no -L {port}:{private_ip}:{port} '
+              'ec2-user@{public_ip}'.format(
+                  private_key=EC2_PRIVATE_KEY_FILE, port=port,
+                  private_ip=private_ip, public_ip=public_ip),
+              shell=True)
+    return p
 
 
-def cm_web_proxy(region, stack_name):
+def web_proxy(region, stack_name):
     ec2_conn = create_ec2_connection(region)
-    instance = get_manager_instance(ec2_conn, stack_name)
-    web_proxy(instance, 7180)
+    manager_instance = get_manager_instance(ec2_conn, stack_name)
+    master_instance = get_master_instance(ec2_conn, stack_name)
+    # create (public_ip, private_ip, port) triples to proxy to
+    cm = (manager_instance.ip_address,
+          manager_instance.private_ip_address,
+          7180)
+    rm = (master_instance.ip_address,
+          master_instance.private_ip_address,
+          8088)
+    hs = (master_instance.ip_address,
+          master_instance.private_ip_address,
+          19888)
+    targets = [cm, rm, hs]
+    tunnels = []
+    for target in targets:
+        tunnels.append(start_web_proxy(*target))
+    try:
+        tunnels[-1].wait()
+    finally:
+        for tunnel in tunnels:
+            tunnel.terminate()
 
 
 def run_director_terminate():
@@ -436,10 +456,17 @@ def install_java_8(region, stack_name):
         mgmt_service.start().wait()
 
 
+def create_hdfs_home():
+    sudo('hadoop fs -mkdir /user/ec2-user', user='hdfs')
+    sudo('hadoop fs -chown ec2-user:supergroup /user/ec2-user', user='hdfs')
+    sudo('hadoop fs -chmod 777 /user/ec2-user', user='hdfs')
+
+
 def install_dev_tools():
     sudo("yum groupinstall -y 'Development Tools'")
     sudo('yum install -y cmake xz-devel ncurses ncurses-devel')
     sudo('yum install -y zlib zlib-devel snappy snappy-devel')
+    sudo('yum install -y python-devel')
 
 
 def install_git():
@@ -511,12 +538,23 @@ def install_quince(fork='cloudera', branch='master'):
         run('mvn clean package -DskipTests')
 
 
+def install_eggo(fork='bigdatagenomics', branch='master', reinstall=False):
+    if reinstall and exists('/home/ec2-user/eggo'):
+        sudo('rm -rf /home/ec2-user/eggo')
+    run('git clone https://github.com/{0}/eggo.git'.format(fork))
+    with cd('eggo'):
+        if branch != 'master':
+            run('git checkout origin/{0}'.format(branch))
+        sudo('python setup.py install')
+
+
 def config_cluster(region, stack_name):
     start_time = datetime.now()
 
     ec2_conn = create_ec2_connection(region)
     master_host = get_master_instance(ec2_conn, stack_name).ip_address
 
+    execute(create_hdfs_home, hosts=[master_host])
     install_java_8(region, stack_name)
     execute(install_dev_tools, hosts=[master_host])
     execute(install_git, hosts=[master_host])
@@ -524,6 +562,7 @@ def config_cluster(region, stack_name):
     execute(install_adam, hosts=[master_host])
     install_opencb([master_host])
     execute(install_quince, hosts=[master_host])
+    execute(install_eggo, hosts=[master_host])
 
     end_time = datetime.now()
     print "Cluster configured. Took {t} minutes.".format(

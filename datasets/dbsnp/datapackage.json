@@ -1,8 +1,7 @@
 {
     "name": "dbsnp",
     "description": "dbSNP VCF data",
-    "dag": "VCF2ADAMTask",
-    "sources": [
+    "resources": [
         {"format": "vcf", "compression": "gzip", "url": "ftp://ftp.ncbi.nih.gov/snp/organisms/human_9606/VCF/00-All.vcf.gz"}
     ]
 }

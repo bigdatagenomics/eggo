@@ -1,3 +1,4 @@
+#! /usr/bin/env python
 # Licensed to Big Data Genomics (BDG) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -14,34 +15,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
+# standard lib only makes it easier to run
+
 import re
-import random
-import string
-from os.path import join as pjoin
-from uuid import uuid4
-from shutil import rmtree
-from hashlib import md5
-from tempfile import mkdtemp
-from datetime import datetime
+import os
+import sys
+import json
 from subprocess import check_call
-from contextlib import contextmanager
-
-
-def uuid():
-    return uuid4().hex
-
-
-def random_id(prefix='tmp_eggo', n=4):
-    dt_string = datetime.now().strftime('%Y-%m-%dT%H-%M-%S')
-    rand_string = ''.join(random.sample(string.ascii_uppercase, n))
-    return '{pre}_{dt}_{rand}'.format(pre=prefix.rstrip('_', 1), dt=dt_string,
-                                      rand=rand_string)
-
-
-def ensure_dir(path):
-    if not os.path.exists(path):
-        os.makedirs(path)
+from os.path import join as pjoin
+from hashlib import md5
 
 
 def sanitize(dirty):
@@ -66,23 +48,28 @@ def uri_to_sanitized_filename(source_uri, decompress=False):
     return filename
 
 
-@contextmanager
-def make_local_tmp(prefix='tmp_eggo_', dir=None):
-    tmpdir = mkdtemp(prefix=prefix, dir=dir)
-    try:
-        yield tmpdir
-    finally:
-        rmtree(tmpdir)
+for line in sys.stdin:
+    resource = json.loads(line.split('\t', 1)[1])
+    
+    # compute dest filename
+    staging_path = os.environ['STAGING_PATH']
+    decompress = resource['compression'] in ['gzip']
+    dest_name = uri_to_sanitized_filename(resource['url'],
+                                          decompress=decompress)
+    dest_path = pjoin(staging_path, dest_name)
+    
+    # construct dnload cmd (straight into HDFS)
+    pipeline = ['curl -L {0}'.format(resource['url'])]
+    if resource['compression'] == 'gzip':
+        pipeline.append('gunzip')
+    pipeline.append('hadoop fs -put - {0}'.format(dest_path))
 
+    # ensure staging path exists
+    check_call('hadoop fs -mkdir -p {0}'.format(staging_path), shell=True)
 
-@contextmanager
-def make_hdfs_tmp(prefix='tmp_eggo', dir='/tmp', permissions='755'):
-    tmpdir = pjoin(dir, '_'.join([prefix, uuid()]))
-    check_call('hadoop fs -mkdir {0}'.format(tmpdir).split())
-    if permissions != '755':
-        check_call(
-            'hadoop fs -chmod -R {0} {1}'.format(permissions, tmpdir).split())
-    try:
-        yield tmpdir
-    finally:
-        check_call('hadoop fs -rm -r {0}'.format(tmpdir).split())
+    # execute dnload
+    cmd = ' | '.join(pipeline)
+    check_call(cmd, shell=True)
+
+    # dummy output
+    sys.stdout.write('{0}\t1\n'.format(dest_path))

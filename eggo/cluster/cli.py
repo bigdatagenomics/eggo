@@ -99,9 +99,9 @@ def describe(region, stack_name):
 @cli.command()
 @option_region
 @option_stack_name
-def cm_web_proxy(region, stack_name):
-    """Set up ssh tunnel to Cloudera Manager web UI on local port 7180"""
-    director.cm_web_proxy(region, stack_name)
+def web_proxy(region, stack_name):
+    """Set up ssh tunnels to web UIs"""
+    director.web_proxy(region, stack_name)
 
 
 @cli.command()
@@ -115,3 +115,18 @@ def get_director_log(region, stack_name):
     execute(
         get, hosts=hosts, local_path='application.log',
         remote_path='/home/ec2-user/.cloudera-director/logs/application.log')
+
+
+@cli.command()
+@option_region
+@option_stack_name
+@option('-f', '--fork', default='bigdatagenomics', show_default=True)
+@option('-b', '--branch', default='master', show_default=True)
+def reinstall_eggo(region, stack_name, fork, branch):
+    """DEBUG: reinstall a specific version of eggo"""
+    from fabric.api import execute
+    ec2_conn = director.create_ec2_connection(region)
+    hosts = [director.get_master_instance(ec2_conn, stack_name).ip_address]
+    execute(
+        director.install_eggo, hosts=hosts, fork=fork, branch=branch,
+        reinstall=True)
