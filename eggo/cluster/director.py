@@ -483,6 +483,15 @@ def install_maven(version='3.3.3'):
                version))
 
 
+def install_gradle(version='2.6'):
+    url = ('https://services.gradle.org/distributions/'
+           'gradle-{0}-bin.zip'.format(version))
+    run('wget {0}'.format(url))
+    run('unzip gradle-{0}-bin.zip'.format(version))
+    append('/home/ec2-user/.bash_profile',
+           'export PATH=/home/ec2-user/gradle-{0}/bin:$PATH'.format(version))
+
+
 def install_adam(fork='bigdatagenomics', branch='master'):
     run('git clone https://github.com/{0}/adam.git'.format(fork))
     with cd('adam'):
@@ -538,6 +547,14 @@ def install_quince(fork='cloudera', branch='master'):
         run('mvn clean package -DskipTests')
 
 
+def install_hellbender(fork='broadinstitute', branch='hellbender'):
+    run('git clone https://github.com/{0}/hellbender.git'.format(fork))
+    with cd('hellbender'):
+        if branch != 'master':
+            run('git checkout origin/{0}'.format(branch))
+        run('gradle installApp')
+
+
 def install_eggo(fork='bigdatagenomics', branch='master', reinstall=False):
     if reinstall and exists('/home/ec2-user/eggo'):
         sudo('rm -rf /home/ec2-user/eggo')
@@ -559,8 +576,10 @@ def config_cluster(region, stack_name):
     execute(install_dev_tools, hosts=[master_host])
     execute(install_git, hosts=[master_host])
     execute(install_maven, hosts=[master_host])
+    execute(install_gradle, hosts=[master_host])
     execute(install_adam, hosts=[master_host])
     install_opencb([master_host])
+    execute(install_hellbender, hosts=[master_host])
     execute(install_quince, hosts=[master_host])
     execute(install_eggo, hosts=[master_host])
 
