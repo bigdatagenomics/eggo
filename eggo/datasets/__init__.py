@@ -24,8 +24,8 @@ from cm_api.api_client import ApiResource
 from eggo.util import make_local_tmp, make_hdfs_tmp
 
 
-STREAMING_JAR = ('/opt/cloudera/parcels/CDH-5.3.3-1.cdh5.3.3.p0.5/jars/'
-                 'hadoop-streaming-2.5.0-cdh5.3.3.jar')
+STREAMING_JAR = ('/opt/cloudera/parcels/CDH-*/lib/hadoop-mapreduce/'
+                 'hadoop-streaming.jar')
 
 
 def get_cluster_specs():

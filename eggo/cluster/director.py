@@ -367,7 +367,7 @@ def install_quince(fork='cloudera', branch='master'):
         run('mvn clean package -DskipTests')
 
 
-def install_hellbender(fork='broadinstitute', branch='hellbender'):
+def install_hellbender(fork='broadinstitute', branch='master'):
     run('git clone https://github.com/{0}/hellbender.git'.format(fork))
     with cd('hellbender'):
         if branch != 'master':
