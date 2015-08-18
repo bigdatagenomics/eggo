@@ -31,7 +31,7 @@ setup(
     author_email='laserson@cloudera.com',
     url='https://github.com/bigdatagenomics/eggo',
     packages=find_packages(),
-    package_data={'eggo.cluster': ['*.template', '*.conf']},
+    package_data={'eggo.cluster.resources': ['*.template', '*.conf']},
     include_package_data=True,
     install_requires=['fabric', 'boto', 'click', 'cm_api'],
     entry_points={'console_scripts': ['eggo = eggo.cluster.cli:cli']},
