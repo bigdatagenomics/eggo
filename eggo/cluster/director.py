@@ -161,15 +161,21 @@ def web_proxy(region, stack_name):
     ec2_conn = create_ec2_connection(region)
     manager_instance = get_manager_instance(ec2_conn, stack_name)
     master_instance = get_master_instance(ec2_conn, stack_name)
-    # create (instance, port) triples to proxy to
-    cm = (manager_instance, 7180)
-    rm = (master_instance, 8088)
-    hs = (master_instance, 19888)
-    targets = [cm, rm, hs]
+    worker_instances = get_worker_instances(ec2_conn, stack_name)
+    # create (instance, port) doubles to proxy to
+    instances = [manager_instance, master_instance] + worker_instances
+    ports = [7180, 8088, 19888]
     tunnels = []
-    for target in targets:
-        tunnels.append(non_blocking_tunnel(*target))
+    local_port = 61101
+    for instance in instances:
+        for port in ports:
+            tunnels.append(non_blocking_tunnel(instance, port, local_port))
+            local_port += 1
+            print('{0}\t{1}\t{2}\tlocalhost:{3}'.format(
+                      instance.ip_address, instance.private_ip_address, port,
+                      local_port))
     try:
+        # block on an arbitrary ssh tunnel
         tunnels[-1].wait()
     finally:
         for tunnel in tunnels:
