@@ -14,11 +14,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os.path as osp
+
 from click import group, option, Choice
+from fabric.api import execute, get
 
 import eggo.cluster.director as director
-from eggo.cluster.config import (
-    DEFAULT_DIRECTOR_CONF_PATH, DEFAULT_CF_TEMPLATE_PATH)
+
+
+DEFAULT_DIRECTOR_CONF_PATH = osp.join(
+    osp.dirname(__file__), 'resources', 'aws.conf')
+DEFAULT_CF_TEMPLATE_PATH = osp.join(
+    osp.dirname(__file__), 'resources', 'cloudformation.template')
 
 
 # reusable options
@@ -93,7 +100,7 @@ def login(region, stack_name, node):
 @option_stack_name
 def describe(region, stack_name):
     """Describe the EC2 instances in the cluster"""
-    director.list(region, stack_name)
+    director.describe(region, stack_name)
 
 
 @cli.command()
@@ -109,7 +116,6 @@ def web_proxy(region, stack_name):
 @option_stack_name
 def get_director_log(region, stack_name):
     """DEBUG: get the Director application log from the launcher instance"""
-    from fabric.api import execute, get
     ec2_conn = director.create_ec2_connection(region)
     hosts = [director.get_launcher_instance(ec2_conn, stack_name).ip_address]
     execute(
@@ -124,7 +130,6 @@ def get_director_log(region, stack_name):
 @option('-b', '--branch', default='master', show_default=True)
 def reinstall_eggo(region, stack_name, fork, branch):
     """DEBUG: reinstall a specific version of eggo"""
-    from fabric.api import execute
     ec2_conn = director.create_ec2_connection(region)
     hosts = [director.get_master_instance(ec2_conn, stack_name).ip_address]
     execute(

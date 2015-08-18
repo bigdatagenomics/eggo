@@ -14,175 +14,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import itertools
-import os
-import sys
-import time
 from getpass import getuser
-from tempfile import mkdtemp
 from datetime import datetime
 from cStringIO import StringIO
-from subprocess import Popen, check_call, CalledProcessError
-from contextlib import contextmanager
 
-import boto.ec2
-import boto.cloudformation
 from boto.ec2.networkinterface import (
     NetworkInterfaceCollection, NetworkInterfaceSpecification)
-from boto.exception import BotoServerError
 from fabric.api import (
-    sudo, local, run, execute, put, open_shell, env, parallel, cd)
+    sudo, run, execute, put, open_shell, env, parallel, cd)
 from fabric.contrib.files import append, exists
 from cm_api.api_client import ApiResource
 
 from eggo.error import EggoError
-from eggo.cluster.config import (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
-                                 EC2_KEY_PAIR, EC2_PRIVATE_KEY_FILE)
+from eggo.config import (
+    get_aws_access_key_id, get_aws_secret_access_key, get_ec2_key_pair,
+    get_ec2_private_key_file)
+from eggo.util import (
+    create_cf_connection, create_cf_stack, get_subnet_id, delete_stack,
+    get_security_group_id, create_ec2_connection, get_tagged_instances,
+    wait_for_instance_state, get_launcher_instance, get_manager_instance,
+    get_master_instance, get_worker_instances, non_blocking_tunnel,
+    http_tunnel_ctx)
 
 
 env.user = 'ec2-user'
-env.key_filename = EC2_PRIVATE_KEY_FILE
-
-
-def _sleep(start_time):
-    elapsed = (datetime.now() - start_time).seconds
-    if elapsed < 30:
-        time.sleep(5)
-    elif elapsed < 60:
-        time.sleep(10)
-    elif elapsed < 200:
-        time.sleep(20)
-    else:
-        time.sleep(elapsed / 10.)
-
-
-# CLOUDFORMATION UTIL
-
-def wait_for_stack_status(cf_conn, stack_name, stack_status):
-    sys.stdout.write(
-        "Waiting for stack to enter '{s}' state.".format(s=stack_status))
-    sys.stdout.flush()
-    start_time = datetime.now()
-    num_attempts = 0
-    while True:
-        _sleep(start_time)
-        stack = cf_conn.describe_stacks(stack_name)[0]
-        if stack.stack_status == stack_status:
-            break
-        num_attempts += 1
-        sys.stdout.write(".")
-        sys.stdout.flush()
-    sys.stdout.write("\n")
-    end_time = datetime.now()
-    print "Stack is now in '{s}' state. Waited {t} seconds.".format(
-        s=stack_status, t=(end_time - start_time).seconds)
-
-
-def create_cf_connection(region):
-    return boto.cloudformation.connect_to_region(region)
-
-
-def create_cf_stack(cf_conn, stack_name, cf_template_path, availability_zone):
-    try:
-        if len(cf_conn.describe_stacks(stack_name)) > 0:
-            print "Stack '{n}' already exists. Reusing.".format(n=stack_name)
-            return
-    except BotoServerError:
-        # stack does not exist
-        pass
-
-    print "Creating stack with name '{n}'.".format(n=stack_name)
-    with open(cf_template_path, 'r') as template_file:
-        template_body=template_file.read()
-    cf_conn.create_stack(stack_name, template_body=template_body,
-                         parameters=[('KeyPairName', EC2_KEY_PAIR),
-                                     ('AZ', availability_zone)],
-                         tags={'owner': getuser(),
-                               'ec2_key_pair': EC2_KEY_PAIR})
-    wait_for_stack_status(cf_conn, stack_name, 'CREATE_COMPLETE')
-
-
-def get_stack_resource_id(cf_conn, stack_name, logical_resource_id):
-    for resource in cf_conn.describe_stack_resources(stack_name):
-        if resource.logical_resource_id == logical_resource_id:
-            return resource.physical_resource_id
-    return None
-
-
-def get_subnet_id(cf_conn, stack_name):
-    return get_stack_resource_id(cf_conn, stack_name, 'DMZSubnet')
-
-
-def get_security_group_id(cf_conn, stack_name):
-    return get_stack_resource_id(cf_conn, stack_name, 'ClusterSG')
-
-
-def delete_stack(cf_conn, stack_name):
-    print "Deleting stack with name '{n}'.".format(n=stack_name)
-    cf_conn.delete_stack(stack_name)
-    wait_for_stack_status(cf_conn, stack_name, 'DELETE_COMPLETE')
-
-
-# EC2 UTIL
-
-def create_ec2_connection(region):
-    return boto.ec2.connect_to_region(region)
-
-
-def get_tagged_instances(ec2_conn, tags):
-    filters = [('tag:' + k, v) for (k, v) in tags.iteritems()]
-    instances = ec2_conn.get_only_instances(filters=filters)
-    return [i for i in instances
-            if i.state not in ["shutting-down", "terminated"]]
-
-
-def get_launcher_instance(ec2_conn, stack_name):
-    return get_tagged_instances(ec2_conn, {'eggo_stack_name': stack_name,
-                                           'eggo_node_type': 'launcher'})[0]
-
-
-def get_manager_instance(ec2_conn, stack_name):
-    return get_tagged_instances(ec2_conn, {'eggo_stack_name': stack_name,
-                                           'eggo_node_type': 'manager'})[0]
-
-
-def get_worker_instances(ec2_conn, stack_name):
-    return get_tagged_instances(ec2_conn, {'eggo_stack_name': stack_name,
-                                           'eggo_node_type': 'worker'})
-
-
-def get_master_instance(ec2_conn, stack_name):
-    return get_tagged_instances(ec2_conn, {'eggo_stack_name': stack_name,
-                                           'eggo_node_type': 'master'})[0]
-
-
-def wait_for_instance_state(ec2_conn, instance, state='running'):
-    sys.stdout.write(
-        "Waiting for instance to enter '{s}' state.".format(s=state))
-    sys.stdout.flush()
-    start_time = datetime.now()
-    num_attempts = 0
-    while True:
-        _sleep(start_time)
-        instance.update()
-        statuses = ec2_conn.get_all_instance_status(instance.id)
-        if len(statuses) > 0:
-            status = statuses[0]
-            if (instance.state == state and
-                    status.system_status.status == 'ok' and
-                    status.instance_status.status == 'ok'):
-                break
-        num_attempts += 1
-        sys.stdout.write(".")
-        sys.stdout.flush()
-    sys.stdout.write("\n")
-    end_time = datetime.now()
-    print "Instance is now in '{s}' state. Waited {t} seconds.".format(
-        s=state, t=(end_time - start_time).seconds)
+env.key_filename = get_ec2_private_key_file()
 
 
 def install_private_key():
-    put(EC2_PRIVATE_KEY_FILE, 'id.pem')
+    put(get_ec2_private_key_file(), 'id.pem')
     run('chmod 600 id.pem')
 
 
@@ -194,9 +54,9 @@ def install_director_client():
 
 def create_launcher_instance(ec2_conn, cf_conn, stack_name, launcher_ami,
                              launcher_instance_type):
-    launcher_instances = get_tagged_instances(ec2_conn,
-                                              {'eggo_stack_name': stack_name,
-                                               'eggo_node_type': 'launcher'})
+    launcher_instances = get_tagged_instances(
+        ec2_conn, {'eggo_stack_name': stack_name,
+                   'eggo_node_type': 'launcher'})
     if len(launcher_instances) > 0:
         print "Launcher instance ({instance}) already exists. Reusing.".format(
             instance=launcher_instances[0].ip_address)
@@ -211,13 +71,13 @@ def create_launcher_instance(ec2_conn, cf_conn, stack_name, launcher_ami,
     interfaces = NetworkInterfaceCollection(interface)
     reservation = ec2_conn.run_instances(
         launcher_ami,
-        key_name=EC2_KEY_PAIR,
+        key_name=get_ec2_key_pair(),
         instance_type=launcher_instance_type,
         network_interfaces=interfaces)
     launcher_instance = reservation.instances[0]
     
     launcher_instance.add_tag('owner', getuser())
-    launcher_instance.add_tag('ec2_key_pair', EC2_KEY_PAIR)
+    launcher_instance.add_tag('ec2_key_pair', get_ec2_key_pair())
     launcher_instance.add_tag('eggo_stack_name', stack_name)
     launcher_instance.add_tag('eggo_node_type', 'launcher')
     wait_for_instance_state(ec2_conn, launcher_instance)
@@ -230,19 +90,19 @@ def run_director_bootstrap(director_conf_path, region, cluster_ami,
                            num_workers, stack_name):
     # replace variables in conf template and copy to launcher
     cf_conn = create_cf_connection(region)
-    params = {'accessKeyId': AWS_ACCESS_KEY_ID,
-              'secretAccessKey': AWS_SECRET_ACCESS_KEY,
+    params = {'accessKeyId': get_aws_access_key_id(),
+              'secretAccessKey': get_aws_secret_access_key(),
               'region': region,
               'stack_name': stack_name,
               'owner': getuser(),
-              'keyName': EC2_KEY_PAIR,
+              'keyName': get_ec2_key_pair(),
               'subnetId': get_subnet_id(cf_conn, stack_name),
               'securityGroupsIds': get_security_group_id(cf_conn, stack_name),
               'image': cluster_ami,
               'num_workers': num_workers}
     with open(director_conf_path, 'r') as template_file:
-         interpolated_body = template_file.read() % params
-         director_conf = StringIO(interpolated_body)
+        interpolated_body = template_file.read() % params
+        director_conf = StringIO(interpolated_body)
     put(director_conf, 'director.conf')
     # bootstrap the Hadoop cluster
     run('cloudera-director bootstrap director.conf')
@@ -274,7 +134,7 @@ def provision(region, availability_zone, stack_name, cf_template_path,
         t=(end_time - start_time).seconds / 60)
 
 
-def list(region, stack_name):
+def describe(region, stack_name):
     ec2_conn = create_ec2_connection(region)
     print 'Launcher', get_launcher_instance(ec2_conn, stack_name).ip_address
     print 'Manager', get_manager_instance(ec2_conn, stack_name).ip_address
@@ -284,6 +144,7 @@ def list(region, stack_name):
 
 
 def login(region, stack_name, node):
+    print('Logging into the {0} node...'.format(node))
     ec2_conn = create_ec2_connection(region)
     if node == 'master':
         hosts = [get_master_instance(ec2_conn, stack_name).ip_address]
@@ -296,34 +157,18 @@ def login(region, stack_name, node):
     execute(open_shell, hosts=hosts)
 
 
-def start_web_proxy(public_ip, private_ip, port):
-    p = Popen('ssh -nNT -i {private_key} -o UserKnownHostsFile=/dev/null '
-              '-o StrictHostKeyChecking=no -L {port}:{private_ip}:{port} '
-              'ec2-user@{public_ip}'.format(
-                  private_key=EC2_PRIVATE_KEY_FILE, port=port,
-                  private_ip=private_ip, public_ip=public_ip),
-              shell=True)
-    return p
-
-
 def web_proxy(region, stack_name):
     ec2_conn = create_ec2_connection(region)
     manager_instance = get_manager_instance(ec2_conn, stack_name)
     master_instance = get_master_instance(ec2_conn, stack_name)
-    # create (public_ip, private_ip, port) triples to proxy to
-    cm = (manager_instance.ip_address,
-          manager_instance.private_ip_address,
-          7180)
-    rm = (master_instance.ip_address,
-          master_instance.private_ip_address,
-          8088)
-    hs = (master_instance.ip_address,
-          master_instance.private_ip_address,
-          19888)
+    # create (instance, port) triples to proxy to
+    cm = (manager_instance, 7180)
+    rm = (master_instance, 8088)
+    hs = (master_instance, 19888)
     targets = [cm, rm, hs]
     tunnels = []
     for target in targets:
-        tunnels.append(start_web_proxy(*target))
+        tunnels.append(non_blocking_tunnel(*target))
     try:
         tunnels[-1].wait()
     finally:
@@ -355,33 +200,6 @@ def teardown(region, stack_name):
     delete_stack(cf_conn, stack_name)
 
 
-@contextmanager
-def tunnel(instance, local_port, remote_port):
-    tunnel_cmd = ('ssh -nNT -i {key} -o UserKnownHostsFile=/dev/null '
-                  '-o StrictHostKeyChecking=no -L {local}:{private}:{remote} '
-                  'ec2-user@{public}'.format(
-                      key=EC2_PRIVATE_KEY_FILE, public=instance.ip_address,
-                      private=instance.private_ip_address, local=local_port,
-                      remote=remote_port))
-    p = Popen(tunnel_cmd, shell=True)
-    # ssh take a bit to open up the connection, so we wait until we get a
-    # successful curl command to the local port
-    print('Attempting to connect through SSH tunnel; may take a few attempts')
-    start_time = datetime.now()
-    while True:
-        try:
-            check_call('curl http://localhost:{0}'.format(local_port),
-                       shell=True)
-            # only reach this point if the curl cmd succeeded.
-            break
-        except CalledProcessError:
-            _sleep(start_time)
-    try:
-        yield
-    finally:
-        p.terminate()
-
-
 def install_java_8(region, stack_name):
     # following general protocol for upgrading to JDK 1.8 here:
     # http://www.cloudera.com/content/cloudera/en/documentation/core/v5-3-x/topics/cdh_cm_upgrading_to_jdk8.html
@@ -397,7 +215,7 @@ def install_java_8(region, stack_name):
                          server_port=64999, version=9)
     cloudera_manager = cm_api.get_cloudera_manager()
 
-    with tunnel(manager_instance, 64999, 7180):
+    with http_tunnel_ctx(manager_instance, 7180, 64999):
         # Stop Cloudera Management Service
         print "Stopping Cloudera Management Service"
         mgmt_service = cloudera_manager.get_service()
@@ -446,7 +264,7 @@ def install_java_8(region, stack_name):
         sudo('service cloudera-scm-agent start')
     execute(start_cm_agents, hosts=cluster_hosts)
 
-    with tunnel(manager_instance, 64999, 7180):
+    with http_tunnel_ctx(manager_instance, 7180, 64999):
         # Start the cluster and the mgmt service
         print "Starting the cluster"
         cluster.start().wait()
@@ -467,6 +285,8 @@ def install_dev_tools():
     sudo('yum install -y cmake xz-devel ncurses ncurses-devel')
     sudo('yum install -y zlib zlib-devel snappy snappy-devel')
     sudo('yum install -y python-devel')
+    sudo('curl https://bootstrap.pypa.io/get-pip.py | python')
+    sudo('pip install -U pip setuptools')
 
 
 def install_git():
@@ -565,13 +385,29 @@ def install_eggo(fork='bigdatagenomics', branch='master', reinstall=False):
         sudo('python setup.py install')
 
 
+def install_env_vars(region, stack_name):
+    # NOTE: this sets cluster env vars to the PRIVATE IP addresses
+    ec2_conn = create_ec2_connection(region)
+    master_host = get_master_instance(ec2_conn, stack_name).ip_address
+    manager_private_ip = get_manager_instance(ec2_conn,
+                                              stack_name).private_ip_address
+
+    def do():
+        append('/home/ec2-user/.bash_profile',
+               'export MANAGER_HOST={0}'.format(manager_private_ip))
+
+    execute(do, hosts=[master_host])
+
+
 def config_cluster(region, stack_name):
     start_time = datetime.now()
 
     ec2_conn = create_ec2_connection(region)
     master_host = get_master_instance(ec2_conn, stack_name).ip_address
 
+    execute(install_private_key, hosts=[master_host])
     execute(create_hdfs_home, hosts=[master_host])
+    install_env_vars(region, stack_name)
     install_java_8(region, stack_name)
     execute(install_dev_tools, hosts=[master_host])
     execute(install_git, hosts=[master_host])

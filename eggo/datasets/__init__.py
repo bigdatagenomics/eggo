@@ -19,11 +19,24 @@ import os
 from os.path import join as pjoin
 from subprocess import check_call
 
+from cm_api.api_client import ApiResource
+
 from eggo.util import make_local_tmp, make_hdfs_tmp
 
 
 STREAMING_JAR = ('/opt/cloudera/parcels/CDH-5.3.3-1.cdh5.3.3.p0.5/jars/'
                  'hadoop-streaming-2.5.0-cdh5.3.3.jar')
+
+
+def get_cluster_specs():
+    cm_api = ApiResource(os.environ['MANAGER_HOST'], username='admin',
+                         password='admin', server_port=7180, version=9)
+    host = list(cm_api.get_all_hosts())[0]  # all hosts same instance type
+    cluster = list(cm_api.get_all_clusters())[0]
+    yarn = filter(lambda x: x.type == 'YARN',
+                  list(cluster.get_all_services()))[0]
+    return {'num_worker_nodes': len(yarn.get_roles_by_type('NODEMANAGER')),
+            'num_cores': host.numCores, 'node_memory': host.totalPhysMemBytes}
 
 
 def download_dataset_with_hadoop(datapackage, hdfs_path):
@@ -73,3 +86,27 @@ def download_dataset_with_hadoop(datapackage, hdfs_path):
             check_call(
                 'hadoop fs -mv "{0}/*" {1}'.format(
                     pjoin(tmp_hdfs_dir, 'staging'), hdfs_path), shell=True)
+
+
+def vcf_to_adam_variants(input_path, output_path):
+    specs = get_cluster_specs()
+    cmd = ('adam/bin/adam-submit --master {master} '
+           '--driver-memory {driver_memory} '
+           '--num-executors {num_executors} '
+           '--executor-cores {executor_cores} '
+           '--executor-memory {executor_memory} '
+           '-- '
+           'vcf2adam -onlyvariants {input} {output}')
+    cores_per_executor = min(4, specs['num_cores'])
+    executors_per_node = specs['num_cores'] / cores_per_executor
+    total_executors = executors_per_node * specs['num_worker_nodes']
+    memory_per_executor = int(0.8 * specs['node_memory'] / executors_per_node)
+    args = {'input': input_path,
+            'output': output_path,
+            'master': 'yarn-client',
+            'driver_memory': '8g',
+            'num_executors': total_executors,
+            'executor_cores': cores_per_executor,
+            'executor_memory': memory_per_executor}
+    print(cmd.format(**args))
+    check_call(cmd.format(**args), shell=True)

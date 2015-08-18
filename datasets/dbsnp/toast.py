@@ -16,16 +16,17 @@
 # limitations under the License.
 
 import json
-import os
 import os.path as osp
 from os.path import join as pjoin
 
-from eggo.datasets import download_dataset_with_hadoop
+from eggo.datasets import download_dataset_with_hadoop, vcf_to_adam_variants
 
 
-hdfs_path = '/user/ec2-user/dbsnp/raw'
+raw_data_path = '/user/ec2-user/dbsnp/raw'
+adam_variants_path = '/user/ec2-user/dbsnp/variants/adam/basic'
 
 with open(pjoin(osp.dirname(__file__), 'datapackage.json')) as ip:
     datapackage = json.load(ip)
 
-download_dataset_with_hadoop(datapackage, hdfs_path)
+download_dataset_with_hadoop(datapackage, raw_data_path)
+vcf_to_adam_variants(raw_data_path, adam_variants_path)
