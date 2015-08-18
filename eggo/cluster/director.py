@@ -194,7 +194,7 @@ def web_proxy(region, stack_name):
 
 
 def run_director_terminate():
-    run('cloudera-director terminate director.conf')
+    run('cloudera-director terminate --lp.terminate.assumeYes=true director.conf')
 
 
 def terminate_launcher_instance(ec2_conn, stack_name):
@@ -431,11 +431,13 @@ def adjust_yarn_memory_limits(region, stack_name):
         nm_cg = filter(lambda x: x.roleType == 'NODEMANAGER',
                        list(yarn.get_all_role_config_groups()))[0]
         rm_cg.update_config({
-            'yarn_scheduler_maximum_allocation_mb': 64000,
-            'yarn_scheduler_maximum_allocation_vcores': 32})
+            'yarn_scheduler_maximum_allocation_mb': (
+                int(host.totalPhysMemBytes / 1024. / 1024.)),
+            'yarn_scheduler_maximum_allocation_vcores': host.numCores})
         nm_cg.update_config({
-            'yarn_nodemanager_resource_memory_mb': 64000,
-            'yarn_nodemanager_resource_cpu_vcores': 32})
+            'yarn_nodemanager_resource_memory_mb': (
+                int(host.totalPhysMemBytes / 1024. / 1024.)),
+            'yarn_nodemanager_resource_cpu_vcores': host.numCores})
         cluster.deploy_client_config().wait()
         cluster.restart().wait()
 
