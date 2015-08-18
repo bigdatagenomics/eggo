@@ -162,18 +162,29 @@ def web_proxy(region, stack_name):
     manager_instance = get_manager_instance(ec2_conn, stack_name)
     master_instance = get_master_instance(ec2_conn, stack_name)
     worker_instances = get_worker_instances(ec2_conn, stack_name)
-    # create (instance, port) doubles to proxy to
-    instances = [manager_instance, master_instance] + worker_instances
-    ports = [7180, 8088, 19888]
+    
     tunnels = []
-    local_port = 61101
-    for instance in instances:
-        for port in ports:
-            tunnels.append(non_blocking_tunnel(instance, port, local_port))
-            local_port += 1
-            print('{0}\t{1}\t{2}\tlocalhost:{3}'.format(
-                      instance.ip_address, instance.private_ip_address, port,
-                      local_port))
+    ts = '{0:<22}{1:<17}{2:<17}{3:<7}localhost:{4}'
+    print(ts.format('name', 'public', 'private', 'remote', 'local'))
+    
+    # CM
+    tunnels.append(non_blocking_tunnel(manager_instance, 7180, 7180))
+    print(ts.format(
+        'CM WebUI', manager_instance.ip_address,
+        manager_instance.private_ip_address, 7180, 7180))
+
+    # YARN RM
+    tunnels.append(non_blocking_tunnel(master_instance, 8088, 8088))
+    print(ts.format(
+        'YARN RM', master_instance.ip_address,
+        master_instance.private_ip_address, 8088, 8088))
+
+    # YARN JobHistory
+    tunnels.append(non_blocking_tunnel(master_instance, 19888, 19888))
+    print(ts.format(
+        'YARN JobHistory', master_instance.ip_address,
+        master_instance.private_ip_address, 19888, 19888))
+
     try:
         # block on an arbitrary ssh tunnel
         tunnels[-1].wait()
@@ -405,6 +416,30 @@ def install_env_vars(region, stack_name):
     execute(do, hosts=[master_host])
 
 
+def adjust_yarn_memory_limits(region, stack_name):
+    ec2_conn = create_ec2_connection(region)
+    manager_instance = get_manager_instance(ec2_conn, stack_name)
+    cm_api = ApiResource('localhost', username='admin', password='admin',
+                         server_port=64999, version=9)
+    with http_tunnel_ctx(manager_instance, 7180, 64999):
+        cluster = list(cm_api.get_all_clusters())[0]
+        host = list(cm_api.get_all_hosts())[0]  # all hosts same instance type
+        yarn = filter(lambda x: x.type == 'YARN',
+                      list(cluster.get_all_services()))[0]
+        rm_cg = filter(lambda x: x.roleType == 'RESOURCEMANAGER',
+                       list(yarn.get_all_role_config_groups()))[0]
+        nm_cg = filter(lambda x: x.roleType == 'NODEMANAGER',
+                       list(yarn.get_all_role_config_groups()))[0]
+        rm_cg.update_config({
+            'yarn_scheduler_maximum_allocation_mb': 64000,
+            'yarn_scheduler_maximum_allocation_vcores': 32})
+        nm_cg.update_config({
+            'yarn_nodemanager_resource_memory_mb': 64000,
+            'yarn_nodemanager_resource_cpu_vcores': 32})
+        cluster.deploy_client_config().wait()
+        cluster.restart().wait()
+
+
 def config_cluster(region, stack_name):
     start_time = datetime.now()
 
@@ -424,6 +459,7 @@ def config_cluster(region, stack_name):
     execute(install_hellbender, hosts=[master_host])
     execute(install_quince, hosts=[master_host])
     execute(install_eggo, hosts=[master_host])
+    adjust_yarn_memory_limits(region, stack_name)
 
     end_time = datetime.now()
     print "Cluster configured. Took {t} minutes.".format(
