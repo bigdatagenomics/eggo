@@ -13,3 +13,35 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+from click import group, option, Choice
+
+
+@group(context_settings={'help_option_names': ['-h', '--help']})
+def cli():
+    """toast -- manages prebaked eggo genomics datasets"""
+    pass
+
+
+@cli.command()
+def done():
+    """List eggo datasets available at s3://bdg-eggo"""
+    pass
+
+
+@cli.command()
+def frozen():
+    """List eggo datasets that can be computed"""
+    pass
+
+
+@cli.command()
+def register():
+    """Register dataset with Hive Metastore (for Hive/Impala)"""
+    pass
+
+
+@cli.command()
+def get():
+    """Get a dataset from S3 (using Hadoop distcp)"""
+    pass

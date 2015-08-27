@@ -19,7 +19,7 @@ import os.path as osp
 from click import group, option, Choice
 from fabric.api import execute, get
 
-import eggo.cluster.director as director
+import eggo.director as director
 
 
 DEFAULT_DIRECTOR_CONF_PATH = osp.join(
@@ -37,12 +37,29 @@ option_stack_name = option(
 
 
 @group(context_settings={'help_option_names': ['-h', '--help']})
-def cli():
-    """eggo -- provisions Hadoop clusters in AWS using Cloudera Director"""
+def main():
+    """eggo -- provisions Hadoop clusters and processes genomics datasets"""
     pass
 
 
-@cli.command()
+@main.group()
+def cluster():
+    """eggo cluster -- provisions Hadoop clusters using Cloudera Director"""
+    pass
+
+
+@main.group()
+def datasets():
+    """eggo datasets -- manages prebaked common genomics datasets"""
+    pass
+
+
+# ================
+# CLUSTER COMMANDS
+# ================
+
+
+@cluster.command()
 @option_region
 @option_stack_name
 @option('--availability-zone', default='us-east-1b', show_default=True,
@@ -68,7 +85,7 @@ def provision(region, availability_zone, stack_name, cf_template_path,
         launcher_instance_type, director_conf_path, cluster_ami, num_workers)
 
 
-@cli.command()
+@cluster.command()
 @option_region
 @option_stack_name
 def config_cluster(region, stack_name):
@@ -76,7 +93,7 @@ def config_cluster(region, stack_name):
     director.config_cluster(region, stack_name)
 
 
-@cli.command()
+@cluster.command()
 @option_region
 @option_stack_name
 def teardown(region, stack_name):
@@ -84,7 +101,7 @@ def teardown(region, stack_name):
     director.teardown(region, stack_name)
 
 
-@cli.command()
+@cluster.command()
 @option_region
 @option_stack_name
 @option('-n', '--node', default='master', show_default=True,
@@ -95,7 +112,7 @@ def login(region, stack_name, node):
     director.login(region, stack_name, node)
 
 
-@cli.command()
+@cluster.command()
 @option_region
 @option_stack_name
 def describe(region, stack_name):
@@ -103,7 +120,7 @@ def describe(region, stack_name):
     director.describe(region, stack_name)
 
 
-@cli.command()
+@cluster.command()
 @option_region
 @option_stack_name
 def web_proxy(region, stack_name):
@@ -111,7 +128,7 @@ def web_proxy(region, stack_name):
     director.web_proxy(region, stack_name)
 
 
-@cli.command()
+@cluster.command()
 @option_region
 @option_stack_name
 def get_director_log(region, stack_name):
@@ -123,7 +140,7 @@ def get_director_log(region, stack_name):
         remote_path='/home/ec2-user/.cloudera-director/logs/application.log')
 
 
-@cli.command()
+@cluster.command()
 @option_region
 @option_stack_name
 @option('-f', '--fork', default='bigdatagenomics', show_default=True)
@@ -135,3 +152,25 @@ def reinstall_eggo(region, stack_name, fork, branch):
     execute(
         director.install_eggo, hosts=hosts, fork=fork, branch=branch,
         reinstall=True)
+
+
+# =================
+# DATASETS COMMANDS
+# =================
+
+@datasets.command()
+def available():
+    """List eggo datasets available at s3://bdg-eggo"""
+    pass
+
+
+@datasets.command()
+def register():
+    """Register dataset with Hive Metastore (for Hive/Impala)"""
+    pass
+
+
+@datasets.command()
+def getblah():
+    """Get a dataset from S3 (using Hadoop distcp)"""
+    pass

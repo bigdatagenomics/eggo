@@ -2,3 +2,5 @@ include LICENSE.txt
 include README.md
 recursive-include registry *.json
 recursive-include test/registry *.json
+recursive-include eggo *.conf
+recursive-include eggo *.template

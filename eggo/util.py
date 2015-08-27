@@ -261,12 +261,13 @@ def wait_for_instance_state(ec2_conn, instance, state='running'):
     while True:
         sleep_progressive(start_time)
         instance.update()
-        statuses = ec2_conn.get_all_instance_status(instance.id)
+        statuses = ec2_conn.get_all_instance_status(instance.id,
+                                                    include_all_instances=True)
         if len(statuses) > 0:
             status = statuses[0]
             if (instance.state == state and
-                    status.system_status.status == 'ok' and
-                    status.instance_status.status == 'ok'):
+                    status.system_status.status in ['ok', 'not-applicable'] and
+                    status.instance_status.status in ['ok', 'not-applicable']):
                 break
         sys.stdout.write(".")
         sys.stdout.flush()

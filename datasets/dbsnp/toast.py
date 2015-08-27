@@ -19,14 +19,30 @@ import json
 import os.path as osp
 from os.path import join as pjoin
 
-from eggo.datasets import download_dataset_with_hadoop, vcf_to_adam_variants
+from eggo.datasets.operations import (
+    download_dataset_with_hadoop, vcf_to_adam_variants, locus_partition,
+    distcp)
+from eggo.util import make_hdfs_tmp
 
 
-raw_data_path = '/user/ec2-user/dbsnp/raw'
-adam_variants_path = '/user/ec2-user/dbsnp/variants/adam/basic'
+hdfs_uri = 'hdfs:///user/ec2-user'
+s3a_uri = 's3a://bdg-eggo'
+
+
+raw_data_path = 'dbsnp_raw'
+adam_nested_path = 'dbsnp_adam'
+adam_flat_path = 'dbsnp_adam_flat'
+
 
 with open(pjoin(osp.dirname(__file__), 'datapackage.json')) as ip:
     datapackage = json.load(ip)
 
-download_dataset_with_hadoop(datapackage, raw_data_path)
-vcf_to_adam_variants(raw_data_path, adam_variants_path)
+
+download_dataset_with_hadoop(datapackage, pjoin(hdfs_uri, raw_data_path))
+
+with make_hdfs_tmp('tmp_dbsnp') as tmp_hdfs_path:
+    tmp_adam_variant_path = pjoin(tmp_hdfs_path, 'tmp_adam_variants')
+    vcf_to_adam_variants(pjoin(hdfs_uri, raw_data_path),
+                         tmp_adam_variant_path)
+    locus_partition(tmp_adam_variant_path, pjoin(hdfs_uri, adam_nested_path))
+    distcp(pjoin(hdfs_uri, adam_nested_path), pjoin(s3a_uri, adam_nested_path))
