@@ -16,7 +16,7 @@ make them accessible to Hive/Impala.
 At the moment, Eggo is geared specifically towards scaling up variant stores
 and related functionality (e.g., population genomics, clinical genomics)
 
-The pre-conerted data sets are hosted at a publicly available S3 bucket:
+The pre-converted data sets are hosted at a publicly available S3 bucket:
 
 ```
 s3://bdg-eggo
