@@ -61,7 +61,7 @@ def create_launcher_instance(ec2_conn, cf_conn, stack_name, launcher_ami,
         print "Launcher instance ({instance}) already exists. Reusing.".format(
             instance=launcher_instances[0].ip_address)
         return launcher_instances[0]
-    
+
     print "Creating launcher instance."
     # see http://stackoverflow.com/questions/19029588/how-to-auto-assign-public-ip-to-ec2-instance-with-boto
     interface = NetworkInterfaceSpecification(
@@ -75,7 +75,7 @@ def create_launcher_instance(ec2_conn, cf_conn, stack_name, launcher_ami,
         instance_type=launcher_instance_type,
         network_interfaces=interfaces)
     launcher_instance = reservation.instances[0]
-    
+
     launcher_instance.add_tag('owner', getuser())
     launcher_instance.add_tag('ec2_key_pair', get_ec2_key_pair())
     launcher_instance.add_tag('eggo_stack_name', stack_name)
@@ -162,11 +162,11 @@ def web_proxy(region, stack_name):
     manager_instance = get_manager_instance(ec2_conn, stack_name)
     master_instance = get_master_instance(ec2_conn, stack_name)
     worker_instances = get_worker_instances(ec2_conn, stack_name)
-    
+
     tunnels = []
     ts = '{0:<22}{1:<17}{2:<17}{3:<7}localhost:{4}'
     print(ts.format('name', 'public', 'private', 'remote', 'local'))
-    
+
     # CM
     tunnels.append(non_blocking_tunnel(manager_instance, 7180, 7180))
     print(ts.format(
@@ -306,6 +306,11 @@ def install_dev_tools():
     sudo('pip install -U pip setuptools')
 
 
+def install_parquet_tools(version='1.8.1'):
+    run('curl -L -O http://search.maven.org/remotecontent?filepath=org/apache/'
+        'parquet/parquet-tools/{0}/parquet-tools-{0}.jar'.format(version))
+
+
 def install_git():
     sudo('yum install -y git')
 
@@ -384,12 +389,12 @@ def install_quince(fork='cloudera', branch='master'):
         run('mvn clean package -DskipTests')
 
 
-def install_hellbender(fork='broadinstitute', branch='master'):
-    run('git clone https://github.com/{0}/hellbender.git'.format(fork))
-    with cd('hellbender'):
+def install_gatk(fork='broadinstitute', branch='master'):
+    run('git clone https://github.com/{0}/gatk.git'.format(fork))
+    with cd('gatk'):
         if branch != 'master':
             run('git checkout origin/{0}'.format(branch))
-        run('gradle installApp')
+        run('gradle sparkJar')
 
 
 def install_eggo(fork='bigdatagenomics', branch='master', reinstall=False):
@@ -402,21 +407,7 @@ def install_eggo(fork='bigdatagenomics', branch='master', reinstall=False):
         sudo('python setup.py install')
 
 
-def install_env_vars(region, stack_name):
-    # NOTE: this sets cluster env vars to the PRIVATE IP addresses
-    ec2_conn = create_ec2_connection(region)
-    master_host = get_master_instance(ec2_conn, stack_name).ip_address
-    manager_private_ip = get_manager_instance(ec2_conn,
-                                              stack_name).private_ip_address
-
-    def do():
-        append('/home/ec2-user/.bash_profile',
-               'export MANAGER_HOST={0}'.format(manager_private_ip))
-
-    execute(do, hosts=[master_host])
-
-
-def adjust_yarn_memory_limits(region, stack_name):
+def adjust_yarn_memory_limits(region, stack_name, restart=True):
     ec2_conn = create_ec2_connection(region)
     manager_instance = get_manager_instance(ec2_conn, stack_name)
     cm_api = ApiResource('localhost', username='admin', password='admin',
@@ -439,10 +430,69 @@ def adjust_yarn_memory_limits(region, stack_name):
                 int(host.totalPhysMemBytes / 1024. / 1024.)),
             'yarn_nodemanager_resource_cpu_vcores': host.numCores})
         cluster.deploy_client_config().wait()
-        cluster.restart().wait()
+        if restart:
+            cluster.restart().wait()
 
 
-def config_cluster(region, stack_name):
+def get_cluster_info(manager_host, server_port=7180, username='admin',
+                     password='admin'):
+    cm_api = ApiResource(manager_host, username=username, password=password,
+                         server_port=server_port, version=9)
+    host = list(cm_api.get_all_hosts())[0]  # all hosts same instance type
+    cluster = list(cm_api.get_all_clusters())[0]
+    yarn = filter(lambda x: x.type == 'YARN',
+                  list(cluster.get_all_services()))[0]
+    hive = filter(lambda x: x.type == 'HIVE',
+                  list(cluster.get_all_services()))[0]
+    impala = filter(lambda x: x.type == 'IMPALA',
+                    list(cluster.get_all_services()))[0]
+    hive_hs2 = hive.get_roles_by_type('HIVESERVER2')[0]
+    hive_host = cm_api.get_host(hive_hs2.hostRef.hostId).hostname
+    hive_port = int(
+        hive_hs2.get_config('full')['hs2_thrift_address_port'].default)
+    impala_hs2 = impala.get_roles_by_type('IMPALAD')[0]
+    impala_host = cm_api.get_host(impala_hs2.hostRef.hostId).hostname
+    impala_port = int(impala_hs2.get_config('full')['hs2_port'].default)
+    return {'num_worker_nodes': len(yarn.get_roles_by_type('NODEMANAGER')),
+            'node_cores': host.numCores, 'node_memory': host.totalPhysMemBytes,
+            'hive_host': hive_host, 'hive_port': hive_port,
+            'impala_host': impala_host, 'impala_port': impala_port}
+
+
+def install_env_vars(region, stack_name):
+    # NOTE: this sets cluster env vars to the PRIVATE IP addresses
+    ec2_conn = create_ec2_connection(region)
+    master_host = get_master_instance(ec2_conn, stack_name).ip_address
+
+    # get information about the cluster
+    manager_instance = get_manager_instance(ec2_conn, stack_name)
+    with http_tunnel_ctx(manager_instance, 7180, 64999):
+        info = get_cluster_info('localhost', 64999, 'admin', 'admin')
+
+    cores_per_executor = min(4, info['node_cores'])
+    executors_per_node = info['node_cores'] / cores_per_executor
+    total_executors = executors_per_node * info['num_worker_nodes']
+    memory_per_executor = int(0.8 * info['node_memory'] / executors_per_node)
+
+    env_var_exports = [
+        'export NUM_WORKER_NODES={0}'.format(info['num_worker_nodes']),
+        'export NODE_CORES={0}'.format(info['node_cores']),
+        'export NODE_MEMORY={0}'.format(info['node_memory']),
+        'export CORES_PER_EXECUTOR={0}'.format(cores_per_executor),
+        'export EXECUTORS_PER_NODE={0}'.format(executors_per_node),
+        'export TOTAL_EXECUTORS={0}'.format(total_executors),
+        'export MEMORY_PER_EXECUTOR={0}'.format(memory_per_executor)]
+
+    def do():
+        append('/home/ec2-user/eggo_env_vars.sh', env_var_exports)
+        append('/home/ec2-user/.bash_profile',
+               'source /home/ec2-user/eggo_env_vars.sh')
+
+    execute(do, hosts=[master_host])
+
+
+def config_cluster(region, stack_name, adam, adam_fork, adam_branch, opencb,
+                   gatk, quince):
     start_time = datetime.now()
 
     ec2_conn = create_ec2_connection(region)
@@ -450,18 +500,28 @@ def config_cluster(region, stack_name):
 
     execute(install_private_key, hosts=[master_host])
     execute(create_hdfs_home, hosts=[master_host])
-    install_env_vars(region, stack_name)
+    # java 8 install will restart the cluster
+    adjust_yarn_memory_limits(region, stack_name, restart=False)
     install_java_8(region, stack_name)
+
+    # install software tools
     execute(install_dev_tools, hosts=[master_host])
     execute(install_git, hosts=[master_host])
     execute(install_maven, hosts=[master_host])
     execute(install_gradle, hosts=[master_host])
-    execute(install_adam, hosts=[master_host])
-    install_opencb([master_host])
-    execute(install_hellbender, hosts=[master_host])
-    execute(install_quince, hosts=[master_host])
+    if adam:
+        execute(install_adam, fork=adam_fork, branch=adam_branch,
+                hosts=[master_host])
+    if opencb:
+        install_opencb([master_host])
+    if gatk:
+        execute(install_gatk, hosts=[master_host])
+    if quince:
+        execute(install_quince, hosts=[master_host])
     execute(install_eggo, hosts=[master_host])
-    adjust_yarn_memory_limits(region, stack_name)
+
+    # install environment vars for use on the cluster
+    install_env_vars(region, stack_name)
 
     end_time = datetime.now()
     print "Cluster configured. Took {t} minutes.".format(

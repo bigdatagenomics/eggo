@@ -14,29 +14,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
+import re
+import json
 from os.path import join as pjoin
-from subprocess import check_call
+from subprocess import check_call, check_output
 
 from cm_api.api_client import ApiResource
+from impala.dbapi import connect
 
 from eggo.util import make_local_tmp, make_hdfs_tmp
 
 
 STREAMING_JAR = ('/opt/cloudera/parcels/CDH-*/lib/hadoop-mapreduce/'
                  'hadoop-streaming.jar')
-
-
-def get_cluster_specs():
-    cm_api = ApiResource(os.environ['MANAGER_HOST'], username='admin',
-                         password='admin', server_port=7180, version=9)
-    host = list(cm_api.get_all_hosts())[0]  # all hosts same instance type
-    cluster = list(cm_api.get_all_clusters())[0]
-    yarn = filter(lambda x: x.type == 'YARN',
-                  list(cluster.get_all_services()))[0]
-    return {'num_worker_nodes': len(yarn.get_roles_by_type('NODEMANAGER')),
-            'num_cores': host.numCores, 'node_memory': host.totalPhysMemBytes}
 
 
 def download_dataset_with_hadoop(datapackage, hdfs_path):
@@ -112,7 +103,32 @@ def vcf_to_adam_variants(input_path, output_path):
     check_call(cmd.format(**args), shell=True)
 
 
-def vcf_to_ga4gh_variants(input_path, output_path, sample_group):
+def adam_flattener(input_path, output_path):
+    specs = get_cluster_specs()
+    cmd = ('adam/bin/adam-submit --master {master} '
+           '--driver-memory {driver_memory} '
+           '--num-executors {num_executors} '
+           '--executor-cores {executor_cores} '
+           '--executor-memory {executor_memory} '
+           '-- '
+           'flatten {input} {output}')
+    cores_per_executor = min(4, specs['num_cores'])
+    executors_per_node = specs['num_cores'] / cores_per_executor
+    total_executors = executors_per_node * specs['num_worker_nodes']
+    memory_per_executor = int(0.8 * specs['node_memory'] / executors_per_node)
+    args = {'input': input_path,
+            'output': output_path,
+            'master': 'yarn-client',
+            'driver_memory': '8g',
+            'num_executors': total_executors,
+            'executor_cores': cores_per_executor,
+            'executor_memory': memory_per_executor}
+    print(cmd.format(**args))
+    check_call(cmd.format(**args), shell=True)
+
+
+def vcf_to_locuspart_ga4gh_flatvariantcalls(input_path, output_path,
+                                            sample_group):
     cmd = ('hadoop jar quince/target/quince-*.jar '
            'com.cloudera.science.quince.LoadVariantsTool '
            '-D mapreduce.map.java.opts='
@@ -129,6 +145,17 @@ def vcf_to_ga4gh_variants(input_path, output_path, sample_group):
     check_call(cmd.format(**args), shell=True)
 
 
+def get_parquet_avro_schema(path):
+    cmd = 'hadoop jar parquet-tools-*.jar meta {0}'.format(path)
+    print(cmd)
+    raw1 = check_output(cmd, shell=True)
+    raw2 = filter(lambda x: x.startswith('extra:'), raw1.split('\n'))[0]
+    match = re.match(r'^extra:\s*parquet.avro.schema = (.*)', raw2)
+    schema = match.group(1)
+    print(schema)
+    return schema
+
+
 def distcp(src, dst, overwrite=False):
     cmd = 'hadoop distcp {options} {src} {dst}'
     options = ''
@@ -141,5 +168,22 @@ def distcp(src, dst, overwrite=False):
     check_call(cmd.format(**args), shell=True)
 
 
-def locus_partition(input_path, output_path):
-    pass
+def locus_partition(input_path, output_path, input_schema, contig_field,
+                    pos_field):
+    specs = get_cluster_specs()
+
+    # create the table with Impala using CREATE TABLE LIKE PARQUET...
+    impala_con = connect(host=specs['impala_host'], port=specs['impala_port'],
+                         auth_mechanism='NOSASL')
+    impala_cur = impala_con.cursor()
+    impala_cur.execute("CREATE EXTERNAL TABLE prepartition "
+                       "LIKE PARQUET '{0}' "
+                       "STORED AS PARQUET "
+                       "LOCATION '{0}'".format(input_path))
+
+    # rewrite data into partitioned table with Hive
+    hive_con = connect(host=specs['hive_host'], port=specs['hive_port'],
+                       auth_mechanism='PLAIN')
+    hive_cur = hive_con.cursor()
+
+    "CREATE EXTERNAL TABLE postpartition PARTITIONED BY (contig STRING, pos BIGINT) STORED AS PARQUET LOCATION '{2}' AS SELECT {0}, {1}, * FROM prepartition"

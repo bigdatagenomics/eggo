@@ -15,11 +15,13 @@
 # limitations under the License.
 
 import os.path as osp
+import json
 
 from click import group, option, Choice
 from fabric.api import execute, get
 
-import eggo.director as director
+from eggo import director
+from eggo import operations
 
 
 DEFAULT_DIRECTOR_CONF_PATH = osp.join(
@@ -88,9 +90,23 @@ def provision(region, availability_zone, stack_name, cf_template_path,
 @cluster.command()
 @option_region
 @option_stack_name
-def config_cluster(region, stack_name):
+@option('--adam/--no-adam', default=True, show_default=True,
+        help='Install ADAM?')
+@option('--adam-fork', default='bigdatagenomics', show_default=True,
+        help='GitHub fork to use for ADAM')
+@option('--adam-branch', default='master', show_default=True,
+        help='GitHub branch to use for ADAM')
+@option('--opencb/--no-opencb', default=True, show_default=True,
+        help='Install OpenCB?')
+@option('--gatk/--no-gatk', default=True, show_default=True,
+        help='Install GATK? (v4 aka Hellbender)')
+@option('--quince/--no-quince', default=True, show_default=True,
+        help='Install quince?')
+def config_cluster(region, stack_name, adam, adam_fork, adam_branch, opencb,
+                   gatk, quince):
     """Configure cluster for genomics, incl. ADAM, OpenCB, Quince, etc"""
-    director.config_cluster(region, stack_name)
+    director.config_cluster(region, stack_name, adam, adam_fork, adam_branch,
+                            opencb, gatk, quince)
 
 
 @cluster.command()
@@ -157,6 +173,16 @@ def reinstall_eggo(region, stack_name, fork, branch):
 # =================
 # DATASETS COMMANDS
 # =================
+
+
+@datasets.command()
+@option('--datapackage', help='Path to datapackage.json file for dataset')
+@option('--destination', help='Fully-qualified HDFS destination path')
+def dnload_datapackage(datapackage_path, destination):
+    with open(datapackage_path) as ip:
+        datapackage = json.load(ip)
+    operations.download_dataset_with_hadoop(datapackage, destination)
+
 
 @datasets.command()
 def available():
