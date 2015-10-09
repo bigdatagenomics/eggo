@@ -20,6 +20,7 @@ import sys
 import time
 import random
 import string
+import os.path as osp
 from os.path import join as pjoin
 from getpass import getuser
 from uuid import uuid4
@@ -58,6 +59,10 @@ def sleep_progressive(start_time):
         time.sleep(20)
     else:
         time.sleep(elapsed / 10.)
+
+
+def resource_dir():
+    return pjoin(osp.dirname(__file__), 'resources')
 
 
 # ==============

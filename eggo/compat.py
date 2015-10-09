@@ -13,3 +13,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+
+try:
+    from subprocess import check_output
+except ImportError:
+    from subprocess import Popen, PIPE, CalledProcessError
+
+    def check_output(*popenargs, **kwargs):
+        # Add subprocess.check_output for python 2.6
+        # https://gist.github.com/edufelipe/1027906
+        process = Popen(stdout=PIPE, *popenargs, **kwargs)
+        output, unused_err = process.communicate()
+        retcode = process.poll()
+        if retcode:
+            cmd = kwargs.get("args")
+            if cmd is None:
+                cmd = popenargs[0]
+            error = CalledProcessError(retcode, cmd)
+            error.output = output
+            raise error
+        return output

@@ -509,6 +509,7 @@ def config_cluster(region, stack_name, adam, adam_fork, adam_branch, opencb,
     execute(install_git, hosts=[master_host])
     execute(install_maven, hosts=[master_host])
     execute(install_gradle, hosts=[master_host])
+    execute(install_parquet_tools, hosts=[master_host])
     if adam:
         execute(install_adam, fork=adam_fork, branch=adam_branch,
                 hosts=[master_host])

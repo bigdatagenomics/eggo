@@ -34,7 +34,8 @@ setup(
     package_data={'eggo.resources': ['*.template', '*.conf']},
     include_package_data=True,
     install_requires=['fabric', 'boto', 'click', 'cm_api'],
-    entry_points={'console_scripts': ['eggo = eggo.cli:main']},
+    entry_points={'console_scripts': ['eggo-cluster = eggo.cli.cluster:main',
+                                      'eggo-data = eggo.cli.datasets:main']},
     keywords=('bdg adam spark eggo genomics omics public data'),
     license='Apache License, Version 2.0',
     classifiers=[

@@ -14,34 +14,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from click import group, option, Choice
+import json
+
+from click import group, option
+
+from eggo import operations
 
 
 @group(context_settings={'help_option_names': ['-h', '--help']})
-def cli():
-    """toast -- manages prebaked eggo genomics datasets"""
+def main():
+    """eggo-data -- operations on common genomics datasets"""
     pass
 
 
-@cli.command()
-def done():
-    """List eggo datasets available at s3://bdg-eggo"""
-    pass
-
-
-@cli.command()
-def frozen():
-    """List eggo datasets that can be computed"""
-    pass
-
-
-@cli.command()
-def register():
-    """Register dataset with Hive Metastore (for Hive/Impala)"""
-    pass
-
-
-@cli.command()
-def get():
-    """Get a dataset from S3 (using Hadoop distcp)"""
-    pass
+@main.command()
+@option('--input', help='Path to datapackage.json file for dataset')
+@option('--output', help='Fully-qualified HDFS destination path')
+def dnload_raw(input, output):
+    """Parallel download raw dataset from datapackage.json using Hadoop"""
+    with open(input) as ip:
+        datapackage = json.load(ip)
+    operations.download_dataset_with_hadoop(datapackage, output)

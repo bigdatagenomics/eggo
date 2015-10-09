@@ -15,19 +15,16 @@
 # limitations under the License.
 
 import os.path as osp
-import json
 
 from click import group, option, Choice
 from fabric.api import execute, get
 
 from eggo import director
-from eggo import operations
+from eggo.util import resource_dir
 
 
-DEFAULT_DIRECTOR_CONF_PATH = osp.join(
-    osp.dirname(__file__), 'resources', 'aws.conf')
-DEFAULT_CF_TEMPLATE_PATH = osp.join(
-    osp.dirname(__file__), 'resources', 'cloudformation.template')
+DEFAULT_DIRECTOR_CONF_PATH = osp.join(resource_dir(), 'aws.conf')
+DEFAULT_CF_TEMPLATE_PATH = osp.join(resource_dir(), 'cloudformation.template')
 
 
 # reusable options
@@ -40,28 +37,11 @@ option_stack_name = option(
 
 @group(context_settings={'help_option_names': ['-h', '--help']})
 def main():
-    """eggo -- provisions Hadoop clusters and processes genomics datasets"""
+    """eggo-cluster -- provisions Hadoop clusters using Cloudera Director"""
     pass
 
 
-@main.group()
-def cluster():
-    """eggo cluster -- provisions Hadoop clusters using Cloudera Director"""
-    pass
-
-
-@main.group()
-def datasets():
-    """eggo datasets -- manages prebaked common genomics datasets"""
-    pass
-
-
-# ================
-# CLUSTER COMMANDS
-# ================
-
-
-@cluster.command()
+@main.command()
 @option_region
 @option_stack_name
 @option('--availability-zone', default='us-east-1b', show_default=True,
@@ -87,7 +67,7 @@ def provision(region, availability_zone, stack_name, cf_template_path,
         launcher_instance_type, director_conf_path, cluster_ami, num_workers)
 
 
-@cluster.command()
+@main.command()
 @option_region
 @option_stack_name
 @option('--adam/--no-adam', default=True, show_default=True,
@@ -96,7 +76,7 @@ def provision(region, availability_zone, stack_name, cf_template_path,
         help='GitHub fork to use for ADAM')
 @option('--adam-branch', default='master', show_default=True,
         help='GitHub branch to use for ADAM')
-@option('--opencb/--no-opencb', default=True, show_default=True,
+@option('--opencb/--no-opencb', default=False, show_default=True,
         help='Install OpenCB?')
 @option('--gatk/--no-gatk', default=True, show_default=True,
         help='Install GATK? (v4 aka Hellbender)')
@@ -109,7 +89,7 @@ def config_cluster(region, stack_name, adam, adam_fork, adam_branch, opencb,
                             opencb, gatk, quince)
 
 
-@cluster.command()
+@main.command()
 @option_region
 @option_stack_name
 def teardown(region, stack_name):
@@ -117,7 +97,7 @@ def teardown(region, stack_name):
     director.teardown(region, stack_name)
 
 
-@cluster.command()
+@main.command()
 @option_region
 @option_stack_name
 @option('-n', '--node', default='master', show_default=True,
@@ -128,7 +108,7 @@ def login(region, stack_name, node):
     director.login(region, stack_name, node)
 
 
-@cluster.command()
+@main.command()
 @option_region
 @option_stack_name
 def describe(region, stack_name):
@@ -136,7 +116,7 @@ def describe(region, stack_name):
     director.describe(region, stack_name)
 
 
-@cluster.command()
+@main.command()
 @option_region
 @option_stack_name
 def web_proxy(region, stack_name):
@@ -144,7 +124,7 @@ def web_proxy(region, stack_name):
     director.web_proxy(region, stack_name)
 
 
-@cluster.command()
+@main.command()
 @option_region
 @option_stack_name
 def get_director_log(region, stack_name):
@@ -156,7 +136,7 @@ def get_director_log(region, stack_name):
         remote_path='/home/ec2-user/.cloudera-director/logs/application.log')
 
 
-@cluster.command()
+@main.command()
 @option_region
 @option_stack_name
 @option('-f', '--fork', default='bigdatagenomics', show_default=True)
@@ -168,35 +148,3 @@ def reinstall_eggo(region, stack_name, fork, branch):
     execute(
         director.install_eggo, hosts=hosts, fork=fork, branch=branch,
         reinstall=True)
-
-
-# =================
-# DATASETS COMMANDS
-# =================
-
-
-@datasets.command()
-@option('--datapackage', help='Path to datapackage.json file for dataset')
-@option('--destination', help='Fully-qualified HDFS destination path')
-def dnload_datapackage(datapackage_path, destination):
-    with open(datapackage_path) as ip:
-        datapackage = json.load(ip)
-    operations.download_dataset_with_hadoop(datapackage, destination)
-
-
-@datasets.command()
-def available():
-    """List eggo datasets available at s3://bdg-eggo"""
-    pass
-
-
-@datasets.command()
-def register():
-    """Register dataset with Hive Metastore (for Hive/Impala)"""
-    pass
-
-
-@datasets.command()
-def getblah():
-    """Get a dataset from S3 (using Hadoop distcp)"""
-    pass
