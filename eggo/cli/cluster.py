@@ -58,6 +58,8 @@ def main():
         help='The AMI to use for the launcher node')
 @option('--launcher-instance-type', default='m3.medium', show_default=True,
         help='The instance type to use for the launcher node')
+@option('--worker-instance-type', default='d2.xlarge', show_default=True,
+        help='The instance type to use for the master/worker nodes')
 @option('--director-conf-path', default=DEFAULT_DIRECTOR_CONF_PATH,
         show_default=True, help='Path to Director conf for AWS cloud')
 @option('--cluster-ami', default='ami-00a11e68', show_default=True,
@@ -65,12 +67,13 @@ def main():
 @option('-n', '--num-workers', default=3, show_default=True,
         help='The total number of worker nodes to provision')
 def provision(region, availability_zone, stack_name, cf_template_path,
-              launcher_ami, launcher_instance_type,
+              launcher_ami, launcher_instance_type, worker_instance_type,
               director_conf_path, cluster_ami, num_workers):
     """Provision a new cluster on AWS"""
     director.provision(
         region, availability_zone, stack_name, cf_template_path, launcher_ami,
-        launcher_instance_type, director_conf_path, cluster_ami, num_workers)
+        launcher_instance_type, worker_instance_type, director_conf_path,
+        cluster_ami, num_workers)
 
 
 @main.command()

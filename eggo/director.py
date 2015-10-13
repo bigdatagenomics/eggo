@@ -103,7 +103,7 @@ def create_launcher_instance(ec2_conn, cf_conn, stack_name, launcher_ami,
 
 
 def run_director_bootstrap(director_conf_path, region, cluster_ami,
-                           num_workers, stack_name):
+                           num_workers, stack_name, worker_instance_type):
     # replace variables in conf template and copy to launcher
     cf_conn = create_cf_connection(region)
     params = {'accessKeyId': get_aws_access_key_id(),
@@ -115,7 +115,8 @@ def run_director_bootstrap(director_conf_path, region, cluster_ami,
               'subnetId': get_subnet_id(cf_conn, stack_name),
               'securityGroupsIds': get_security_group_id(cf_conn, stack_name),
               'image': cluster_ami,
-              'num_workers': num_workers}
+              'num_workers': num_workers,
+              'worker_instance_type': worker_instance_type}
     with open(director_conf_path, 'r') as template_file:
         interpolated_body = template_file.read() % params
         director_conf = StringIO(interpolated_body)
@@ -125,8 +126,8 @@ def run_director_bootstrap(director_conf_path, region, cluster_ami,
 
 
 def provision(region, availability_zone, stack_name, cf_template_path,
-              launcher_ami, launcher_instance_type, director_conf_path,
-              cluster_ami, num_workers):
+              launcher_ami, launcher_instance_type, worker_instance_type,
+              director_conf_path, cluster_ami, num_workers):
     start_time = datetime.now()
 
     # create cloudformation stack (VPC etc)
@@ -143,7 +144,8 @@ def provision(region, availability_zone, stack_name, cf_template_path,
         run_director_bootstrap,
         director_conf_path=director_conf_path, region=region,
         cluster_ami=cluster_ami, num_workers=num_workers,
-        stack_name=stack_name, hosts=[launcher_instance.ip_address])
+        stack_name=stack_name, worker_instance_type=worker_instance_type,
+        hosts=[launcher_instance.ip_address])
 
     end_time = datetime.now()
     print "Cluster has started. Took {t} minutes.".format(
