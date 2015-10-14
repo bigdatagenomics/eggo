@@ -16,7 +16,7 @@
 
 import json
 
-from click import group, option
+from click import group, option, File
 
 from eggo import operations
 
@@ -35,3 +35,19 @@ def dnload_raw(input, output):
     with open(input) as ip:
         datapackage = json.load(ip)
     operations.download_dataset_with_hadoop(datapackage, output)
+
+
+@main.command()
+@option('--cm-host', help='Hostname for Cloudera Manager')
+@option('--cm-port', default=7180, show_default=True,
+        help='Port for Cloudera Manager')
+@option('--username', default='admin', show_default=True, help='CM username')
+@option('--password', default='admin', show_default=True, help='CM password')
+@option('--output', type=File(mode='w'), default='-', show_default=True,
+        help='Output destination ("-" for stdout)')
+def gen_env_vars(cm_host, cm_port, username, password, output):
+    """Generate env vars required for eggo scripts to run"""
+    env_vars = operations.generate_eggo_env_vars(cm_host, cm_port, username,
+                                                 password)
+    for (k, v) in env_vars.iteritems():
+        output.write("export {0}={1}\n".format(k, v))

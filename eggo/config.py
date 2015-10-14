@@ -14,6 +14,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
+# This module should define the AWS config required by the eggo-director CLI
+
+
 import os
 
 from eggo.error import ConfigError

@@ -14,6 +14,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
+# This module contains internal code for working with Cloudera Director-
+# configured clusters. The functions here should probably be using the Fabric
+# API to execute commands on the cluster nodes (along with AWS/boto objects).
+# The functions here could (should) be refactored into a Director interface
+# that could be implemented on multiple clouds.
+
+
 from getpass import getuser
 from datetime import datetime
 from cStringIO import StringIO
@@ -29,16 +37,24 @@ from eggo.error import EggoError
 from eggo.config import (
     get_aws_access_key_id, get_aws_secret_access_key, get_ec2_key_pair,
     get_ec2_private_key_file)
-from eggo.util import (
+from eggo.aws import (
     create_cf_connection, create_cf_stack, get_subnet_id, delete_stack,
     get_security_group_id, create_ec2_connection, get_tagged_instances,
-    wait_for_instance_state, get_launcher_instance, get_manager_instance,
-    get_master_instance, get_worker_instances, non_blocking_tunnel,
-    http_tunnel_ctx)
+    wait_for_instance_state)
+from eggo.util import non_blocking_tunnel, tunnel_ctx
+from eggo.operations import generate_eggo_env_vars
 
 
 env.user = 'ec2-user'
 env.key_filename = get_ec2_private_key_file()
+
+
+def cm_tunnel_ctx(manager_instance):
+    # shortcut fn returns a context object that sets up a tunnel on
+    # localhost:64999
+    return tunnel_ctx(manager_instance.ip_address,
+                      manager_instance.private_ip_address, 7180, 64999,
+                      'ec2-user', get_ec2_private_key_file())
 
 
 def install_private_key():
@@ -134,6 +150,26 @@ def provision(region, availability_zone, stack_name, cf_template_path,
         t=(end_time - start_time).seconds / 60)
 
 
+def get_launcher_instance(ec2_conn, stack_name):
+    return get_tagged_instances(ec2_conn, {'eggo_stack_name': stack_name,
+                                           'eggo_node_type': 'launcher'})[0]
+
+
+def get_manager_instance(ec2_conn, stack_name):
+    return get_tagged_instances(ec2_conn, {'eggo_stack_name': stack_name,
+                                           'eggo_node_type': 'manager'})[0]
+
+
+def get_master_instance(ec2_conn, stack_name):
+    return get_tagged_instances(ec2_conn, {'eggo_stack_name': stack_name,
+                                           'eggo_node_type': 'master'})[0]
+
+
+def get_worker_instances(ec2_conn, stack_name):
+    return get_tagged_instances(ec2_conn, {'eggo_stack_name': stack_name,
+                                           'eggo_node_type': 'worker'})
+
+
 def describe(region, stack_name):
     ec2_conn = create_ec2_connection(region)
     print 'Launcher', get_launcher_instance(ec2_conn, stack_name).ip_address
@@ -168,19 +204,28 @@ def web_proxy(region, stack_name):
     print(ts.format('name', 'public', 'private', 'remote', 'local'))
 
     # CM
-    tunnels.append(non_blocking_tunnel(manager_instance, 7180, 7180))
+    tunnels.append(non_blocking_tunnel(manager_instance.ip_address,
+                                       manager_instance.private_ip_address,
+                                       7180, 7180, 'ec2-user',
+                                       get_ec2_private_key_file()))
     print(ts.format(
         'CM WebUI', manager_instance.ip_address,
         manager_instance.private_ip_address, 7180, 7180))
 
     # YARN RM
-    tunnels.append(non_blocking_tunnel(master_instance, 8088, 8088))
+    tunnels.append(non_blocking_tunnel(master_instance.ip_address,
+                                       master_instance.private_ip_address,
+                                       8088, 8088, 'ec2-user',
+                                       get_ec2_private_key_file()))
     print(ts.format(
         'YARN RM', master_instance.ip_address,
         master_instance.private_ip_address, 8088, 8088))
 
     # YARN JobHistory
-    tunnels.append(non_blocking_tunnel(master_instance, 19888, 19888))
+    tunnels.append(non_blocking_tunnel(master_instance.ip_address,
+                                       master_instance.private_ip_address,
+                                       19888, 19888, 'ec2-user',
+                                       get_ec2_private_key_file()))
     print(ts.format(
         'YARN JobHistory', master_instance.ip_address,
         master_instance.private_ip_address, 19888, 19888))
@@ -194,7 +239,8 @@ def web_proxy(region, stack_name):
 
 
 def run_director_terminate():
-    run('cloudera-director terminate --lp.terminate.assumeYes=true director.conf')
+    run('cloudera-director terminate --lp.terminate.assumeYes=true '
+        'director.conf')
 
 
 def terminate_launcher_instance(ec2_conn, stack_name):
@@ -227,12 +273,12 @@ def install_java_8(region, stack_name):
         [manager_instance, get_master_instance(ec2_conn, stack_name)])
     cluster_hosts = [i.ip_address for i in cluster_instances]
 
-    # Connect to CM API
-    cm_api = ApiResource('localhost', username='admin', password='admin',
-                         server_port=64999, version=9)
-    cloudera_manager = cm_api.get_cloudera_manager()
+    with cm_tunnel_ctx(manager_instance) as local_port:
+        # Connect to CM API
+        cm_api = ApiResource('localhost', username='admin', password='admin',
+                             server_port=local_port, version=9)
+        cloudera_manager = cm_api.get_cloudera_manager()
 
-    with http_tunnel_ctx(manager_instance, 7180, 64999):
         # Stop Cloudera Management Service
         print "Stopping Cloudera Management Service"
         mgmt_service = cloudera_manager.get_service()
@@ -281,7 +327,12 @@ def install_java_8(region, stack_name):
         sudo('service cloudera-scm-agent start')
     execute(start_cm_agents, hosts=cluster_hosts)
 
-    with http_tunnel_ctx(manager_instance, 7180, 64999):
+    with cm_tunnel_ctx(manager_instance) as local_port:
+        # Connect to CM API
+        cm_api = ApiResource('localhost', username='admin', password='admin',
+                             server_port=local_port, version=9)
+        cloudera_manager = cm_api.get_cloudera_manager()
+
         # Start the cluster and the mgmt service
         print "Starting the cluster"
         cluster.start().wait()
@@ -410,9 +461,9 @@ def install_eggo(fork='bigdatagenomics', branch='master', reinstall=False):
 def adjust_yarn_memory_limits(region, stack_name, restart=True):
     ec2_conn = create_ec2_connection(region)
     manager_instance = get_manager_instance(ec2_conn, stack_name)
-    cm_api = ApiResource('localhost', username='admin', password='admin',
-                         server_port=64999, version=9)
-    with http_tunnel_ctx(manager_instance, 7180, 64999):
+    with cm_tunnel_ctx(manager_instance) as local_port:
+        cm_api = ApiResource('localhost', username='admin', password='admin',
+                             server_port=local_port, version=9)
         cluster = list(cm_api.get_all_clusters())[0]
         host = list(cm_api.get_all_hosts())[0]  # all hosts same instance type
         yarn = filter(lambda x: x.type == 'YARN',
@@ -434,60 +485,23 @@ def adjust_yarn_memory_limits(region, stack_name, restart=True):
             cluster.restart().wait()
 
 
-def get_cluster_info(manager_host, server_port=7180, username='admin',
-                     password='admin'):
-    cm_api = ApiResource(manager_host, username=username, password=password,
-                         server_port=server_port, version=9)
-    host = list(cm_api.get_all_hosts())[0]  # all hosts same instance type
-    cluster = list(cm_api.get_all_clusters())[0]
-    yarn = filter(lambda x: x.type == 'YARN',
-                  list(cluster.get_all_services()))[0]
-    hive = filter(lambda x: x.type == 'HIVE',
-                  list(cluster.get_all_services()))[0]
-    impala = filter(lambda x: x.type == 'IMPALA',
-                    list(cluster.get_all_services()))[0]
-    hive_hs2 = hive.get_roles_by_type('HIVESERVER2')[0]
-    hive_host = cm_api.get_host(hive_hs2.hostRef.hostId).hostname
-    hive_port = int(
-        hive_hs2.get_config('full')['hs2_thrift_address_port'].default)
-    impala_hs2 = impala.get_roles_by_type('IMPALAD')[0]
-    impala_host = cm_api.get_host(impala_hs2.hostRef.hostId).hostname
-    impala_port = int(impala_hs2.get_config('full')['hs2_port'].default)
-    return {'num_worker_nodes': len(yarn.get_roles_by_type('NODEMANAGER')),
-            'node_cores': host.numCores, 'node_memory': host.totalPhysMemBytes,
-            'hive_host': hive_host, 'hive_port': hive_port,
-            'impala_host': impala_host, 'impala_port': impala_port}
-
-
 def install_env_vars(region, stack_name):
-    # NOTE: this sets cluster env vars to the PRIVATE IP addresses
     ec2_conn = create_ec2_connection(region)
-    master_host = get_master_instance(ec2_conn, stack_name).ip_address
 
     # get information about the cluster
     manager_instance = get_manager_instance(ec2_conn, stack_name)
-    with http_tunnel_ctx(manager_instance, 7180, 64999):
-        info = get_cluster_info('localhost', 64999, 'admin', 'admin')
-
-    cores_per_executor = min(4, info['node_cores'])
-    executors_per_node = info['node_cores'] / cores_per_executor
-    total_executors = executors_per_node * info['num_worker_nodes']
-    memory_per_executor = int(0.8 * info['node_memory'] / executors_per_node)
-
-    env_var_exports = [
-        'export NUM_WORKER_NODES={0}'.format(info['num_worker_nodes']),
-        'export NODE_CORES={0}'.format(info['node_cores']),
-        'export NODE_MEMORY={0}'.format(info['node_memory']),
-        'export CORES_PER_EXECUTOR={0}'.format(cores_per_executor),
-        'export EXECUTORS_PER_NODE={0}'.format(executors_per_node),
-        'export TOTAL_EXECUTORS={0}'.format(total_executors),
-        'export MEMORY_PER_EXECUTOR={0}'.format(memory_per_executor)]
+    with cm_tunnel_ctx(manager_instance) as local_port:
+        env_vars = generate_eggo_env_vars('localhost', local_port, 'admin',
+                                          'admin')
+    env_var_exports = ['export {0}={1}'.format(k, v)
+                       for (k, v) in env_vars.iteritems()]
 
     def do():
         append('/home/ec2-user/eggo_env_vars.sh', env_var_exports)
         append('/home/ec2-user/.bash_profile',
                'source /home/ec2-user/eggo_env_vars.sh')
 
+    master_host = get_master_instance(ec2_conn, stack_name).ip_address
     execute(do, hosts=[master_host])
 
 

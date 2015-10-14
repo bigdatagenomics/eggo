@@ -20,8 +20,15 @@ import json
 from os.path import join as pjoin
 from subprocess import check_call
 
+from cm_api.api_client import ApiResource
+
 from eggo.util import make_local_tmp, make_hdfs_tmp
 from eggo.compat import check_output
+
+
+# This module includes operations to be performed on an actual Hadoop cluster
+# to operate on data.  The functionality here can be used in scripts for ETLing
+# data sets
 
 
 STREAMING_JAR = ('/opt/cloudera/parcels/CDH-*/lib/hadoop-mapreduce/'
@@ -86,3 +93,44 @@ def get_parquet_avro_schema(path):
     schema = match.group(1)
     print(schema)
     return schema
+
+
+def get_cluster_info(manager_host, server_port=7180, username='admin',
+                     password='admin'):
+    cm_api = ApiResource(manager_host, username=username, password=password,
+                         server_port=server_port, version=9)
+    host = list(cm_api.get_all_hosts())[0]  # all hosts same instance type
+    cluster = list(cm_api.get_all_clusters())[0]
+    yarn = filter(lambda x: x.type == 'YARN',
+                  list(cluster.get_all_services()))[0]
+    hive = filter(lambda x: x.type == 'HIVE',
+                  list(cluster.get_all_services()))[0]
+    impala = filter(lambda x: x.type == 'IMPALA',
+                    list(cluster.get_all_services()))[0]
+    hive_hs2 = hive.get_roles_by_type('HIVESERVER2')[0]
+    hive_host = cm_api.get_host(hive_hs2.hostRef.hostId).hostname
+    hive_port = int(
+        hive_hs2.get_config('full')['hs2_thrift_address_port'].default)
+    impala_hs2 = impala.get_roles_by_type('IMPALAD')[0]
+    impala_host = cm_api.get_host(impala_hs2.hostRef.hostId).hostname
+    impala_port = int(impala_hs2.get_config('full')['hs2_port'].default)
+    return {'num_worker_nodes': len(yarn.get_roles_by_type('NODEMANAGER')),
+            'node_cores': host.numCores, 'node_memory': host.totalPhysMemBytes,
+            'hive_host': hive_host, 'hive_port': hive_port,
+            'impala_host': impala_host, 'impala_port': impala_port}
+
+
+def generate_eggo_env_vars(cm_host, cm_port=7180, username='admin',
+                           password='admin'):
+    info = get_cluster_info(cm_host, cm_port, username, password)
+    cores_per_executor = min(4, info['node_cores'])
+    executors_per_node = info['node_cores'] / cores_per_executor
+    total_executors = executors_per_node * info['num_worker_nodes']
+    memory_per_executor = int(0.8 * info['node_memory'] / executors_per_node)
+    return {'NUM_WORKER_NODES': str(info['num_worker_nodes']),
+            'NODE_CORES': str(info['node_cores']),
+            'NODE_MEMORY': str(info['node_memory']),
+            'CORES_PER_EXECUTOR': str(cores_per_executor),
+            'EXECUTORS_PER_NODE': str(executors_per_node),
+            'TOTAL_EXECUTORS': str(total_executors),
+            'MEMORY_PER_EXECUTOR': str(memory_per_executor)}

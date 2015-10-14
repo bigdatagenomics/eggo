@@ -23,6 +23,12 @@ from eggo import director
 from eggo.util import resource_dir
 
 
+# This module implements the eggo-director CLI, which is comprised of commands
+# that are typically run on a user's local machine that has set some cloud-
+# service-specific env vars (like access keys).  It is used for
+# creating/managing CDH clusters using Cloudera Director.
+
+
 DEFAULT_DIRECTOR_CONF_PATH = osp.join(resource_dir(), 'aws.conf')
 DEFAULT_CF_TEMPLATE_PATH = osp.join(resource_dir(), 'cloudformation.template')
 
