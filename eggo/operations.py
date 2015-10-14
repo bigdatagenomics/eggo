@@ -17,6 +17,7 @@
 import os
 import re
 import json
+from getpass import getuser
 from os.path import join as pjoin
 from subprocess import check_call
 
@@ -77,8 +78,8 @@ def download_dataset_with_hadoop(datapackage, hdfs_path):
             # move dnloaded data to final path
             check_call('hadoop fs -mkdir -p {0}'.format(hdfs_path), shell=True)
             check_call(
-                'sudo -u hdfs hadoop fs -chown -R ec2-user:supergroup {0}'
-                .format(tmp_hdfs_dir), shell=True)
+                'sudo -u hdfs hadoop fs -chown -R {1}:supergroup {0}'
+                .format(tmp_hdfs_dir, getuser()), shell=True)
             check_call(
                 'hadoop fs -mv "{0}/*" {1}'.format(
                     pjoin(tmp_hdfs_dir, 'staging'), hdfs_path), shell=True)
