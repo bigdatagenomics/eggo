@@ -91,11 +91,15 @@ def provision(region, availability_zone, stack_name, cf_template_path,
         help='Install GATK? (v4 aka Hellbender)')
 @option('--quince/--no-quince', default=True, show_default=True,
         help='Install quince?')
+@option('--quince-fork', default='cloudera', show_default=True,
+        help='GitHub fork to use for Quince')
+@option('--quince-branch', default='master', show_default=True,
+        help='GitHub branch to use for Quince')
 def config_cluster(region, stack_name, adam, adam_fork, adam_branch, opencb,
-                   gatk, quince):
+                   gatk, quince, quince_fork, quince_branch):
     """Configure cluster for genomics, incl. ADAM, OpenCB, Quince, etc"""
     director.config_cluster(region, stack_name, adam, adam_fork, adam_branch,
-                            opencb, gatk, quince)
+                            opencb, gatk, quince, quince_fork, quince_branch)
 
 
 @main.command()

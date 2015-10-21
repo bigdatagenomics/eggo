@@ -508,7 +508,7 @@ def install_env_vars(region, stack_name):
 
 
 def config_cluster(region, stack_name, adam, adam_fork, adam_branch, opencb,
-                   gatk, quince):
+                   gatk, quince, quince_fork, quince_branch):
     start_time = datetime.now()
 
     ec2_conn = create_ec2_connection(region)
@@ -534,7 +534,8 @@ def config_cluster(region, stack_name, adam, adam_fork, adam_branch, opencb,
     if gatk:
         execute(install_gatk, hosts=[master_host])
     if quince:
-        execute(install_quince, hosts=[master_host])
+        execute(install_quince, fork=quince_fork, branch=quince_branch,
+                hosts=[master_host])
     execute(install_eggo, hosts=[master_host])
 
     # install environment vars for use on the cluster
