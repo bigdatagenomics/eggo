@@ -79,7 +79,7 @@ def get_s3_properties():
     return [e.find('name').text for e in elts]
 
 
-@group
+@group(context_settings={'help_option_names': ['-h', '--help']})
 def main():
     """Utility to generate S3 properties for Hadoop client config"""
     if 'AWS_ACCESS_KEY_ID' not in os.environ:
@@ -161,3 +161,6 @@ def reset_cm(cm_host, cm_port, username, password):
     print("Restarting necessary services...")
     cluster.restart().wait()
     print("Done!")
+
+if __name__ == '__main__':
+    main()
